@@ -421,3 +421,7 @@ gateway supports optional `DEMO_MODE` and private `DEMO_PASSWORD` settings.
 See [configuration and limits](docs/DEMO_MODE.md) and the
 [secret-free env template](deploy/demo-access/.env.example). These settings belong
 to the server gateway; the local application does not read them automatically.
+
+## DOC-STD-20261002 — Documentation navigation
+
+Use the [documentation map](docs/README.md) for authoritative sources, reading paths and project-specific maintenance rules.

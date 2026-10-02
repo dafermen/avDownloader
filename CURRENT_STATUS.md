@@ -443,3 +443,7 @@ Source, blank template and five passing security/configuration tests are version
 under `deploy/demo-access`. See `docs/DEMO_MODE.md` and its ADR for operations,
 rollback and limits. This documentation release does not accept unrelated tasks,
 publish pending app development, enable email invitations or alter pilot expiry.
+
+## DOC-STD-20261002 — Documentation organization
+
+The [documentation map](docs/README.md) now identifies canonical sources and maintenance rules. Existing implementation milestones and pending acceptance are unchanged. Validation and publication are tracked separately for this documentation-only change.
