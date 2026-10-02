@@ -413,3 +413,11 @@ Do not commit videos, cookies, CDN tokens, or files from `data/jobs`.
 ## License
 
 Project-owned vDownloader code is distributed under the [MIT license](LICENSE). Dependencies and binaries retain their independent licenses described in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+
+## Portfolio demo access
+
+[Open the protected demo](https://avdownloader.innovalogic.tech/). The external test-server
+gateway supports optional `DEMO_MODE` and private `DEMO_PASSWORD` settings.
+See [configuration and limits](docs/DEMO_MODE.md) and the
+[secret-free env template](deploy/demo-access/.env.example). These settings belong
+to the server gateway; the local application does not read them automatically.

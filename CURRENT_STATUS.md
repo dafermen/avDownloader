@@ -431,3 +431,15 @@ Validation on Windows, 2026-10-01:
 - `THIRD_PARTY_LICENSES.md`
 - `AGENTS.md`
 - `CURRENT_STATUS.md`
+
+## DEMO-ENV-20261002 — Optional portfolio entry gate
+
+The owner authorized publication and test-server deployment of the external demo
+gateway and its documentation. `DEMO_MODE=true|false` and private `DEMO_PASSWORD`
+are read from a separate server env file, not the root local-development env.
+The current test deployment stays protected with the existing keys. The gateway
+retains server-side verification, host-bound sessions and native app permissions.
+Source, blank template and five passing security/configuration tests are versioned
+under `deploy/demo-access`. See `docs/DEMO_MODE.md` and its ADR for operations,
+rollback and limits. This documentation release does not accept unrelated tasks,
+publish pending app development, enable email invitations or alter pilot expiry.
