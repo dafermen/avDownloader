@@ -1,0 +1,49 @@
+{
+  "name": "vdownloader",
+  "displayName": "vDownloader",
+  "version": "1.0.0",
+  "private": true,
+  "license": "MIT",
+  "description": "Local application for downloading, trimming, joining, and transcoding supported video and audio",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dafermen/avDownloader.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dafermen/avDownloader/issues"
+  },
+  "homepage": "https://github.com/dafermen/avDownloader#readme",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test \"test/**/*.test.js\"",
+    "test:acceptance": "node --test test/acceptance/application.acceptance.test.js",
+    "test:unit": "node --test \"test/unit/*.test.js\"",
+    "test:property": "node --test test/property/invariants.property.test.js",
+    "test:mutation": "node scripts/mutation-check.js",
+    "test:fuzz": "node --test test/fuzz/input.fuzz.test.js",
+    "test:integration": "node --test test/integration/http.integration.test.js",
+    "test:contract": "node --test test/contract/api.contract.test.js",
+    "test:e2e": "node --test \"test/e2e/*.test.js\"",
+    "test:regression": "node --test test/regression/known-issues.regression.test.js",
+    "test:security": "node --test test/security/security.test.js",
+    "test:resilience": "node --test test/resilience/concurrency.resilience.test.js",
+    "test:performance": "node --test test/performance/resource-budget.performance.test.js",
+    "test:compatibility": "node --test test/compatibility/deployment.compatibility.test.js",
+    "check:syntax": "node scripts/check-syntax.js",
+    "verify:deploy": "node scripts/predeploy-check.js",
+    "update:yt-dlp": "node scripts/update-yt-dlp.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "^0.10.35",
+    "hls.js": "^1.6.13",
+    "youtube-dl-exec": "^3.0.22"
+  },
+  "optionalDependencies": {
+    "ffmpeg-static": "^5.2.0"
+  }
+}

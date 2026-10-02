@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Technical documentation and learning guide for vDownloader.">
+  <title>Documentation · vDownloader</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css?v=9">
+  <link rel="stylesheet" href="/docs.css?v=2">
+</head>
+<body>
+  <header class="docs-topbar">
+    <a class="brand" href="/" aria-label="Return to vDownloader"><span>vD</span> vDownloader</a>
+    <div class="docs-top-actions"><a href="/">← Back to the application</a><span>Documentation v1.1</span></div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <p>Contents</p>
+      <nav aria-label="Documentation index">
+        <a href="#introduccion">Introduction</a><a href="#inicio">Quick start</a><a href="#usuario">User guide</a><a href="#archivo-local">Local video</a><a href="#audio-local">Local audio</a><a href="#sitios-compatibles">Supported sites</a>
+        <a href="#arquitectura">Architecture</a><a href="#flujo">Data flow</a><a href="#estructura">Structure</a>
+        <a href="#configuracion">Configuration</a><a href="#api">HTTP API</a><a href="#codigo">Code map</a>
+        <a href="#proveedores">Providers</a><a href="#persistencia">Persistence</a><a href="#frontend">Frontend</a>
+        <a href="#estudiantes">Student guide</a><a href="#pruebas">Testing</a><a href="#licencias">Licenses</a><a href="#seguridad">Security</a>
+        <a href="#problemas">Troubleshooting</a><a href="#contribuir">Contributing</a><a href="#glosario">Glossary</a>
+      </nav>
+    </aside>
+
+    <main class="docs-content">
+      <section id="introduccion" class="docs-hero">
+        <p class="docs-kicker">Complete documentation · users · development · learning</p>
+        <h1>vDownloader,<br><em>explained from end to end.</em></h1>
+        <p>This page contains the project's functional and technical documentation. It is written for users, junior developers, and students who want to understand a real application built with Node.js, JavaScript, HLS, and FFmpeg.</p>
+        <div class="notice warning"><strong>Responsible use.</strong> Use the application only with content you have the right to download, and follow each provider's terms and applicable law. Adult providers are intended only for people aged 18 or older.</div>
+      </section>
+
+      <section class="doc-section">
+        <h2>Project summary</h2>
+        <div class="summary-grid">
+          <article><span>Backend</span><strong>Node.js ≥ 20</strong><p>Framework-free HTTP server with ES modules.</p></article>
+          <article><span>Media</span><strong>FFmpeg + HLS.js</strong><p>Video preparation, audio transcoding, and HLS playback.</p></article>
+          <article><span>Providers</span><strong>4 supported sites</strong><p>YouTube, XVideos, Pornhub, and XNXX with authorized domains.</p></article>
+          <article><span>State</span><strong>Local persistence</strong><p>Recoverable queue, retries, and temporary files.</p></article>
+        </div>
+      </section>
+
+      <section id="inicio" class="doc-section">
+        <p class="section-label">01 · Installation</p><h2>Quick start</h2>
+        <p>On Linux, vDownloader uses system-managed FFmpeg and yt-dlp. Windows development environments may use the local binaries installed through npm.</p>
+        <ol class="steps">
+          <li><strong>Install Node.js 20 or later.</strong><p>Check the version with <code>node --version</code>.</p></li>
+          <li><strong>Install the Linux tools.</strong><pre><code>sudo apt install -y ffmpeg pipx
+pipx install yt-dlp</code></pre></li>
+          <li><strong>Install the Node.js dependencies.</strong><pre><code>YOUTUBE_DL_SKIP_DOWNLOAD=true YOUTUBE_DL_SKIP_PYTHON_CHECK=1 npm ci</code></pre></li>
+          <li><strong>Start the service.</strong><pre><code>npm start</code></pre></li>
+          <li><strong>Open the application.</strong><pre><code>http://localhost:5177</code></pre></li>
+        </ol>
+        <h3>Development with automatic restart</h3><pre><code>npm run dev</code></pre>
+        <h3>Installing yt-dlp on Windows</h3>
+        <p><code>youtube-dl-exec</code> installs a local <code>yt-dlp</code> executable. If its installer cannot find Python, skip that check; the Windows binary is self-contained.</p>
+        <pre><code>$env:YOUTUBE_DL_SKIP_PYTHON_CHECK = '1'
+npm install</code></pre>
+      </section>
+
+      <section id="usuario" class="doc-section">
+        <p class="section-label">02 · Usage</p><h2>User guide</h2>
+        <ol class="steps">
+          <li><strong>Paste a supported URL.</strong><p>Individual public videos from YouTube, XVideos, Pornhub, and XNXX are supported.</p></li>
+          <li><strong>Select Analyze.</strong><p>The application obtains the provider, title, duration, thumbnail, and qualities.</p></li>
+          <li><strong>Review the preview.</strong><p>HLS uses a restricted local proxy to handle CORS.</p></li>
+          <li><strong>Optional: enable trimming.</strong><p>Use the timeline, time fields, or current player position.</p></li>
+          <li><strong>Choose a quality.</strong><p>The estimated size is adjusted to the selected range.</p></li>
+          <li><strong>Wait for preparation.</strong><p>The panel shows queue status, progress, attempts, and remaining time.</p></li>
+          <li><strong>Download the MP4.</strong><p>The complete file supports resumable downloads.</p></li>
+        </ol>
+        <div class="notice"><strong>Temporary links.</strong> If a CDN link expires, the job analyzes the original URL again and looks for the same quality.</div>
+        <h3>Job administration</h3>
+        <p>The panel includes individual and bulk <strong>Restart</strong> actions. They preserve source, provider, quality, trim range, and Identity protection; remove previous output; clear progress and errors; refresh signed URLs; and return jobs to the queue. Status, provider, and date filters, expired-file cleanup, storage figures, bounded job-event history, and administrative audit are available in the same panel.</p>
+        <p>On localhost, no token is required while <code>ADMIN_TOKEN</code> is empty. For remote access, enter the configured token in the <strong>Job administration</strong> section. The browser stores it only in <code>sessionStorage</code> for the current tab.</p>
+        <div class="notice warning"><strong>Current scope.</strong> Local mode manages all jobs as the local administrator. Optional remote profiles provide owner isolation and user/admin roles, but there is no registration, password recovery, MFA, or external single sign-on.</div>
+      </section>
+
+      <section id="archivo-local" class="doc-section">
+        <p class="section-label">02.1 · Editor</p><h2>Trim and transcode a local video</h2>
+        <p>The editor supports MP4, M4V, MOV, and WebM. After you select a file, the browser creates a preview with a local <code>blob:</code> URL; the file has not yet been sent to the server.</p>
+        <ol class="steps">
+          <li><strong>Select the video.</strong><p>The format, size, and duration are validated.</p></li>
+          <li><strong>Set the start and end.</strong><p>Use the two timeline handles, time fields, or current player position.</p></li>
+          <li><strong>Choose the output profile.</strong><p>Select MP4, MOV, WebM, or MKV and a compatible video/audio codec pair.</p></li>
+          <li><strong>Optional: protect identities.</strong><p>Enable the feature, adjust margin and intensity, detect faces, and review the preview.</p></li>
+          <li><strong>Select Export.</strong><p>Only then is the temporary file uploaded. The button shows the uploaded percentage.</p></li>
+          <li><strong>Wait for the job.</strong><p>The export uses the same queue, progress, cancellation, persistence, and panel as remote downloads.</p></li>
+          <li><strong>Download the result.</strong><p>FFmpeg produces the selected allowlisted profile: H.264/H.265 with AAC or Opus, or VP9 with Opus, in a compatible container.</p></li>
+        </ol>
+        <table><tbody>
+          <tr><td>Formats</td><td>MP4, M4V, MOV, and WebM.</td></tr>
+          <tr><td>Outputs</td><td>MP4/MOV with H.264 or H.265 plus AAC; WebM with VP9 plus Opus; MKV with compatible H.264/H.265/VP9 and AAC/Opus combinations.</td></tr>
+          <tr><td>Duration</td><td>Between 1 second and 12 hours.</td></tr>
+          <tr><td>Size</td><td>2 GB by default; configurable with <code>MAX_UPLOAD_GB</code>.</td></tr>
+          <tr><td>Retention</td><td>The source is removed when the job is deleted or expires.</td></tr>
+        </tbody></table>
+        <div class="notice"><strong>Temporary does not mean immediate deletion.</strong> The source is retained for the life of the job so an administrator can restart it. Its path is never exposed, and incomplete uploads are removed automatically.</div>
+        <h3>Identity protection</h3>
+        <p>This feature automatically locates all faces in the selected range. MediaPipe Tasks Vision and the BlazeFace model are served by vDownloader and run in the browser: no frame is sent to an external recognition service.</p>
+        <ol class="steps">
+          <li><strong>Enable Identity protection.</strong><p>The panel appears inside the local editor.</p></li>
+          <li><strong>Adjust the margin.</strong><p>Expand each region to cover the head and imprecise movement. The default is 40%.</p></li>
+          <li><strong>Adjust the intensity.</strong><p>A larger block produces stronger pixelation.</p></li>
+          <li><strong>Select Detect faces.</strong><p>The browser analyzes up to four samples per second, with a maximum of 900, and displays progress.</p></li>
+          <li><strong>Select anonymous people.</strong><p>Every spatial track is labeled Person 1, Person 2, and so on. This is tracking, not biometric recognition.</p></li>
+          <li><strong>Correct individual points.</strong><p>Add a missed region, select it on the canvas, drag it, resize it from the lower-right corner, or delete only that sampled point.</p></li>
+          <li><strong>Review the full path.</strong><p>The editor plays the complete protected range. Export remains blocked until the user confirms the visual review.</p></li>
+          <li><strong>Export with protection.</strong><p>FFmpeg creates a moving temporal mask and applies <code>pixelize</code> only to selected and manually corrected regions.</p></li>
+        </ol>
+        <p>Reinforced tracking joins each face's current position to its next position to cover movement between samples. It also preserves coverage for up to 1.5 seconds when a face is briefly lost because of a turn or occlusion. The result is intentionally conservative: fast movement may pixelate a larger area to reduce exposure.</p>
+        <div class="notice warning"><strong>This is not an absolute guarantee.</strong> A small, turned, covered, or poorly lit face may be missed. Review the final exported video before sharing it. The feature does not anonymize voices, tattoos, license plates, backgrounds, metadata, or other personal signals.</div>
+        <p>The browser does not send all boxes in a header or URL. It first registers normalized coordinates with <code>POST /api/identity-tracks</code> and receives a temporary, single-use UUID. Tracking is attached to the job and stored in <code>jobs.json</code> to support restarts; it contains no images, facial templates, or biometric identifiers.</p>
+      </section>
+
+      <section id="audio-local" class="doc-section">
+        <p class="section-label">02.2 · Audio</p><h2>Trim, join, and transcode local audio</h2>
+        <p>The audio tool supports one to twenty MP3, M4A, AAC, WAV, FLAC, OGG, and Opus inputs. The browser creates local previews first; sources are sent to the server only after the user selects <strong>Export audio</strong>.</p>
+        <ol class="steps">
+          <li><strong>Select the audio files.</strong><p>Each extension, MIME type, size, and browser-readable duration is validated.</p></li>
+          <li><strong>Trim every source.</strong><p>Select an item from the ordered list and use the shared timeline to set that source's own start and end.</p></li>
+          <li><strong>Set the join order.</strong><p>Move items earlier or later, or remove an item before export.</p></li>
+          <li><strong>Choose the output.</strong><p>Select a compatible format/codec pair. Lossy codecs offer 96, 128, 192, 256, or 320 kbps.</p></li>
+          <li><strong>Export.</strong><p>A single source uses the binary endpoint. Multiple sources use a bounded streaming envelope and enter the same persistent queue.</p></li>
+          <li><strong>Download or resume.</strong><p>The final typed output supports HTTP byte ranges.</p></li>
+        </ol>
+        <table><tbody>
+          <tr><td>Input</td><td>MP3, M4A, AAC, WAV, FLAC, OGG, and Opus.</td></tr>
+          <tr><td>Output</td><td>MP3/MP3, M4A/AAC, OGG/Vorbis or Opus, Opus/Opus, FLAC/FLAC, or WAV/PCM signed 16-bit little endian.</td></tr>
+          <tr><td>Limits</td><td>1–20 sources; every range lasts at least one second; combined selected duration is at most 12 hours.</td></tr>
+          <tr><td>Lifecycle</td><td>Same quota, ownership, queue, restart, cancellation, expiration, cleanup, and panel as video.</td></tr>
+        </tbody></table>
+        <div class="notice"><strong>Server-owned profiles.</strong> The browser chooses only an allowlisted format, codec, and bitrate combination. It cannot send a raw FFmpeg argument, output extension, or filesystem path. The first compatible stream from each input is normalized to 48 kHz stereo before concatenation.</div>
+        <div class="notice warning"><strong>Preview compatibility.</strong> A browser may not preview every accepted codec even when FFmpeg can transcode it. If duration cannot be read, convert the source to WAV, MP3, or M4A first or use another current browser.</div>
+      </section>
+
+      <section id="sitios-compatibles" class="doc-section">
+        <p class="section-label">02.3 · Compatibility</p><h2>Supported video sites and local media</h2>
+        <p>The application recognizes the following page formats and uses only the qualities exposed by each site's public player.</p>
+        <table><thead><tr><th>Site</th><th>Supported URL format</th><th>Sources</th></tr></thead><tbody>
+          <tr><td><strong>YouTube</strong></td><td><code>youtube.com/watch?v=&lt;id&gt;</code>, <code>youtu.be/&lt;id&gt;</code>, <code>/shorts/&lt;id&gt;</code>, and <code>/live/&lt;id&gt;</code></td><td>Combined MP4 or adaptive video + audio</td></tr>
+          <tr><td><strong>XVideos</strong></td><td><code>https://www.xvideos.com/video.&lt;id&gt;/&lt;slug&gt;</code></td><td>MP4 and HLS</td></tr>
+          <tr><td><strong>Pornhub</strong></td><td><code>https://&lt;language&gt;.pornhub.com/view_video.php?viewkey=&lt;id&gt;</code></td><td>HLS and published variants</td></tr>
+          <tr><td><strong>XNXX</strong></td><td><code>https://www.xnxx.com/video-&lt;id&gt;/&lt;slug&gt;</code></td><td>MP4 and HLS</td></tr>
+          <tr><td><strong>Local file</strong></td><td>MP4, M4V, MOV, or WebM</td><td>Trim and convert to MP4/MOV/WebM/MKV with compatible H.264/H.265/VP9 and AAC/Opus profiles</td></tr>
+          <tr><td><strong>Local audio</strong></td><td>One to twenty MP3, M4A, AAC, WAV, FLAC, OGG, or Opus files</td><td>Per-source trimming, ordering, joining, and MP3/M4A/OGG/Opus/FLAC/WAV output</td></tr>
+        </tbody></table>
+        <div class="notice"><strong>Scope.</strong> Individual public videos are accepted. Home pages, search results, profiles, categories, full playlists, private or sign-in-gated content, and unregistered mirror domains are not supported. <code>/live/</code> URLs work for accessible recordings.</div>
+        <p>Available resolutions vary by video, region, and provider. The application does not create a higher quality: it presents published sources and prepares the selected file.</p>
+      </section>
+
+      <section id="arquitectura" class="doc-section">
+        <p class="section-label">03 · Design</p><h2>Architecture</h2>
+        <div class="architecture">
+          <div><strong>Browser</strong><span>HTML · CSS · app.js · HLS.js</span></div><b>HTTP</b>
+          <div><strong>Server</strong><span>API · queue · persistence</span></div><b>HTTPS</b>
+          <div><strong>Provider</strong><span>Public page and CDN</span></div><b>process</b>
+          <div><strong>FFmpeg</strong><span>Video · audio · trim · join</span></div>
+        </div>
+        <ul>
+          <li><strong>Framework-free backend:</strong> makes it easier to study <code>node:http</code> directly.</li>
+          <li><strong>Modular providers:</strong> each site validates and analyzes its own structure.</li>
+          <li><strong>Remote video without transcoding:</strong> preserves quality and reduces CPU usage when the source is already H.264.</li>
+          <li><strong>Bounded local video profiles:</strong> only compatible MP4/MOV/WebM/MKV and H.264/H.265/VP9 plus AAC/Opus combinations are accepted.</li>
+          <li><strong>Bounded audio profiles:</strong> local audio uses explicit input, output, codec, and bitrate allowlists.</li>
+          <li><strong>Streaming joins:</strong> multi-audio bytes are streamed to UUID-owned paths and concatenated after sample normalization.</li>
+          <li><strong>SSRF defense:</strong> only explicitly authorized pages and CDNs are accepted.</li>
+        </ul>
+      </section>
+
+      <section id="flujo" class="doc-section">
+        <p class="section-label">04 · Sequence</p><h2>Data flow</h2>
+        <h3>Analysis</h3><div class="flow"><span>URL</span><i>→</i><span>normalize</span><i>→</i><span>parser</span><i>→</i><span>resolve HLS</span><i>→</i><span>qualities</span></div>
+        <h3>Preparation</h3><div class="flow"><span>POST /api/jobs</span><i>→</i><span>validate</span><i>→</i><span>queue</span><i>→</i><span>FFmpeg</span><i>→</i><span>MP4</span><i>→</i><span>download</span></div>
+        <h3>Retry</h3><div class="flow"><span>CDN failure</span><i>→</i><span>wait</span><i>→</i><span>reanalyze</span><i>→</i><span>refreshed URL</span><i>→</i><span>new attempt</span></div>
+        <h3>Administrative restart</h3><div class="flow"><span>Restart</span><i>→</i><span>stop FFmpeg</span><i>→</i><span>clear output</span><i>→</i><span>refresh URL</span><i>→</i><span>queue</span></div>
+        <h3>Local file</h3><div class="flow"><span>blob: preview</span><i>→</i><span>range + profile</span><i>→</i><span>temporary upload</span><i>→</i><span>queue</span><i>→</i><span>typed output</span></div>
+        <h3>Local audio</h3><div class="flow"><span>local previews</span><i>→</i><span>per-source ranges + order</span><i>→</i><span>streaming upload</span><i>→</i><span>normalize + join</span><i>→</i><span>typed output</span></div>
+      </section>
+
+      <section id="estructura" class="doc-section">
+        <p class="section-label">05 · Repository</p><h2>Project structure</h2>
+        <pre class="tree"><code>vDownloader/
+├── server.js                 # API, queue, FFmpeg, and persistence
+├── package.json              # Scripts and dependencies
+├── AGENTS.md                 # Rules for future Codex sessions
+├── CURRENT_STATUS.md         # Status, validation, and next steps
+├── LICENSE                   # MIT license for project code
+├── README.md                 # GitHub landing page
+├── THIRD_PARTY_LICENSES.md    # Licenses and external services
+├── .github/workflows/         # Linux continuous integration
+├── providers/
+│   ├── index.js              # Provider registry and selection
+│   ├── youtube.js            # yt-dlp and adaptive formats
+│   ├── xvideos.js            # XVideos rules and parser
+│   ├── pornhub.js            # Pornhub rules and parser
+│   ├── xnxx.js               # XNXX rules and parser
+│   └── utils.js              # HTML entities and HLS
+├── public/
+│   ├── index.html            # Main application
+│   ├── app.js                # Browser interactions
+│   ├── i18n.js               # Spanish and English UI strings
+│   ├── styles.css            # Main design
+│   ├── docs.html             # This documentation
+│   └── docs.css              # Documentation design
+├── docs/                     # Architecture, API, testing, and operations
+├── deploy/                   # systemd and Nginx starting templates
+├── test/                     # Tests grouped by quality concern
+├── scripts/                  # Maintenance and deployment quality gate
+├── CHANGELOG.md              # Release history
+├── CONTRIBUTING.md           # Contribution policy
+└── data/jobs/                # Persisted index, sources, and media outputs</code></pre>
+      </section>
+
+      <section id="configuracion" class="doc-section">
+        <p class="section-label">06 · Environment</p><h2>Configuration</h2>
+        <table><thead><tr><th>Variable</th><th>Default</th><th>Purpose</th></tr></thead><tbody>
+          <tr><td><code>PORT</code></td><td>5177</td><td>HTTP port.</td></tr>
+          <tr><td><code>MAX_CONCURRENT_JOBS</code></td><td>2</td><td>Concurrent FFmpeg processes, from 1 to 8.</td></tr>
+          <tr><td><code>MAX_JOB_RETRIES</code></td><td>2</td><td>Additional retries, from 0 to 5.</td></tr>
+          <tr><td><code>MAX_STORAGE_GB</code></td><td>10</td><td>Quota for prepared MP4 files.</td></tr>
+          <tr><td><code>JOB_DIR</code></td><td>data/jobs</td><td>Persistent index, temporary sources, and completed video/audio files.</td></tr>
+          <tr><td><code>JOB_TTL_MINUTES</code></td><td>60</td><td>Retention for terminal jobs and MP4 files, from 5 to 10080 minutes.</td></tr>
+          <tr><td><code>FFMPEG_PATH</code></td><td>Linux: ffmpeg</td><td>FFmpeg command or absolute path.</td></tr>
+          <tr><td><code>YT_DLP_PATH</code></td><td>Linux: yt-dlp</td><td>yt-dlp command or absolute path.</td></tr>
+          <tr><td><code>ADMIN_TOKEN</code></td><td>empty</td><td>Protects remote administrative restarts. When empty, administration is accepted only from localhost.</td></tr>
+          <tr><td><code>MAX_UPLOAD_GB</code></td><td>2</td><td>Per-file local upload limit; cannot exceed the total quota.</td></tr>
+          <tr><td><code>REMOTE_ACCESS_ENABLED</code></td><td>false</td><td>Enables authenticated network binding; otherwise loopback is enforced.</td></tr>
+          <tr><td><code>ACCESS_TOKENS_JSON</code></td><td>[]</td><td>User/admin profiles with strong bearer tokens and optional active-job limits.</td></tr>
+          <tr><td><code>MAX_ACTIVE_JOBS_PER_USER</code></td><td>4</td><td>Default active-job quota for a remote user.</td></tr>
+          <tr><td><code>RATE_LIMIT_MAX</code></td><td>120</td><td>General API request budget per address per minute.</td></tr>
+          <tr><td><code>HTTPS_KEY_PATH</code> / <code>HTTPS_CERT_PATH</code></td><td>empty</td><td>Built-in TLS files; both are required together.</td></tr>
+          <tr><td><code>TRUSTED_HTTPS_PROXY</code></td><td>false</td><td>Confirms that a trusted reverse proxy terminates HTTPS.</td></tr>
+        </tbody></table>
+        <pre><code>$env:MAX_CONCURRENT_JOBS = 3
+$env:MAX_JOB_RETRIES = 2
+$env:MAX_STORAGE_GB = 20
+$env:JOB_TTL_MINUTES = 120
+$env:JOB_DIR = 'D:\vDownloader-jobs'
+$env:ADMIN_TOKEN = 'change-this-secret'
+$env:MAX_UPLOAD_GB = 4
+npm start</code></pre>
+        <h3>System tools on Linux</h3>
+        <p>Linux uses <code>ffmpeg</code> and <code>yt-dlp</code> from <code>PATH</code> by default. You can configure server-managed locations without modifying the code:</p>
+        <pre><code>export FFMPEG_PATH=/usr/bin/ffmpeg
+export YT_DLP_PATH=/opt/vdownloader-tools/bin/yt-dlp
+YOUTUBE_DL_SKIP_DOWNLOAD=true YOUTUBE_DL_SKIP_PYTHON_CHECK=1 npm ci
+npm start</code></pre>
+      </section>
+
+      <section id="api" class="doc-section">
+        <p class="section-label">07 · HTTP contract</p><h2>HTTP API</h2>
+        <div class="endpoint"><b>POST</b><code>/api/analyze</code><p>Input: <code>{ "url": "https://..." }</code>. Output: provider, title, duration, and qualities with opaque <code>selectionId</code> and <code>previewUrl</code> values. Signed CDN URLs are never returned.</p></div>
+        <div class="endpoint"><b>POST</b><code>/api/jobs</code><p>Creates a job and responds with HTTP 202.</p><pre><code>{
+  "selectionId": "uuid-returned-by-analyze",
+  "start": 30,
+  "end": 90
+}</code></pre></div>
+        <div class="endpoint"><b>POST</b><code>/api/upload-jobs</code><p>Receives local video as a binary body. Requires <code>Content-Length</code>, <code>x-vdownloader-upload: 1</code>, encoded name/duration/range headers, and allowlisted <code>x-video-format</code>, <code>x-video-codec</code>, and <code>x-video-audio-codec</code> values. Responds with HTTP 202 and never returns an internal path.</p></div>
+        <div class="endpoint"><b>POST</b><code>/api/audio-jobs</code><p>Receives one audio source as a binary body. Requires <code>x-vdownloader-audio: 1</code>, regular <code>x-upload-*</code> headers, <code>x-audio-format</code>, <code>x-audio-codec</code>, and a lossy bitrate when applicable.</p></div>
+        <div class="endpoint"><b>POST</b><code>/api/audio-join-jobs</code><p>Receives 2–20 ordered sources through <code>application/vnd.vdownloader.audio-join</code>. A four-byte metadata length precedes at most 64 KiB of versioned JSON and the declared binary sources. Requires <code>x-vdownloader-audio-join: 1</code>. Bytes stream to UUID-owned files; complete media is never buffered in memory.</p></div>
+        <div class="endpoint"><b>POST</b><code>/api/identity-tracks</code><p>Input: <code>pixelate</code> method, duration, block size, and up to 900 samples with normalized boxes. Requires <code>x-vdownloader-identity: 1</code>. Returns <code>identityTrackId</code>, an in-memory UUID that expires after 30 minutes and is consumed when the upload is created.</p></div>
+        <div class="endpoint"><b>GET</b><code>/api/jobs</code><p>Lists the authenticated user's jobs and statistics. Administrators can see all jobs.</p></div>
+        <div class="endpoint"><b>GET</b><code>/api/jobs/:id</code><p>Returns status, progress, and retry/event history when the caller owns the job or is an administrator.</p></div>
+        <div class="endpoint"><b>DELETE</b><code>/api/jobs/:id</code><p>Cancels or deletes an owned job. Administrators can manage every job.</p></div>
+        <div class="endpoint"><b>POST</b><code>/api/jobs/:id/restart</code><p>Restarts one job, preserves its parameters, and responds with HTTP 202. Requires <code>x-vdownloader-admin: 1</code> and administrator authorization.</p></div>
+        <div class="endpoint"><b>POST</b><code>/api/admin/jobs/restart</code><p>Bulk-restarts up to 100 job IDs. Requires <code>x-vdownloader-admin: 1</code> and an administrator profile.</p></div>
+        <div class="endpoint"><b>POST</b><code>/api/admin/jobs/cleanup</code><p>Removes expired jobs and their temporary files when called with <code>{ "scope": "expired" }</code>.</p></div>
+        <div class="endpoint"><b>GET</b><code>/api/admin/audit</code><p>Returns the bounded administrative audit trail for authorized administrators.</p></div>
+        <div class="endpoint"><b>GET / HEAD</b><code>/api/jobs/:id/download</code><p>Streams the completed typed video or audio output and supports ranges with HTTP 206.</p></div>
+        <div class="endpoint"><b>GET</b><code>/api/media/:id</code><p>Opaque proxy for MP4, manifests, segments, and HLS keys. The UUID is resolved only in memory.</p></div>
+        <div class="endpoint"><b>GET</b><code>/api/health</code><p>vDownloader diagnostics: version, uptime, FFmpeg, yt-dlp, queue, retention, storage, and the caller's role. Responds with HTTP 503 when a dependency is missing.</p></div>
+        <div class="notice"><strong>Remote authentication.</strong> When remote mode is enabled, API requests use <code>Authorization: Bearer &lt;token&gt;</code>. Tokens and roles are configured with <code>ACCESS_TOKENS_JSON</code>. A direct local loopback request is an administrator session. A request forwarded from a remote address by a trusted local proxy remains remote and must authenticate; non-HTTPS remote requests receive HTTP 426. Legacy <code>ADMIN_TOKEN</code> can still protect local administrator actions when configured.</div>
+        <h3>States</h3>
+        <table><tbody><tr><td><code>queued</code></td><td>Waiting in the queue.</td></tr><tr><td><code>processing</code></td><td>FFmpeg is active.</td></tr><tr><td><code>retrying</code></td><td>Refreshing or waiting.</td></tr><tr><td><code>restarting</code></td><td>Stopping the previous execution before restarting it.</td></tr><tr><td><code>ready</code></td><td>File available.</td></tr><tr><td><code>cancelled</code></td><td>Cancelled.</td></tr><tr><td><code>error</code></td><td>Terminal failure.</td></tr></tbody></table>
+      </section>
+
+      <section id="codigo" class="doc-section">
+        <p class="section-label">08 · Reference</p><h2>Source code map</h2>
+        <h3><code>server.js</code></h3>
+        <table><thead><tr><th>Function</th><th>Input</th><th>Output / effect</th></tr></thead><tbody>
+          <tr><td><code>analyzeSource</code></td><td>URL and estimation flag.</td><td>Normalized video model.</td></tr>
+          <tr><td><code>createOpaqueAnalysis</code></td><td>Model with internal URLs.</td><td>Registers selections and returns safe UUIDs.</td></tr>
+          <tr><td><code>createJob</code></td><td>HTTP JSON.</td><td>Validates, persists, and queues.</td></tr>
+          <tr><td><code>createUploadJob</code></td><td>Binary body and headers.</td><td>Stores a temporary source and queues its clip.</td></tr>
+          <tr><td><code>normalizeUploadMetadata</code></td><td>Name, MIME type, bytes, times, container, and codecs.</td><td>Validates source limits and returns an allowlisted video output profile.</td></tr>
+          <tr><td><code>normalizeAudioUploadMetadata</code></td><td>Name, MIME, bytes, times, output format, codec, and bitrate.</td><td>Validates the audio source and returns a bounded encoding profile.</td></tr>
+          <tr><td><code>createAudioUploadJob</code></td><td>Binary audio body and control headers.</td><td>Stores an opaque temporary source and queues audio transcoding.</td></tr>
+          <tr><td><code>createAudioJoinJob</code></td><td>Length-prefixed metadata and ordered binary sources.</td><td>Streams 2–20 validated sources to UUID paths and queues persistent concatenation.</td></tr>
+          <tr><td><code>createBoundedUploadReader</code></td><td>Request stream and exact byte count.</td><td>Reads bounded metadata and writes each source without buffering complete media.</td></tr>
+          <tr><td><code>normalizeIdentityProtection</code></td><td>Method, duration, samples, and regions.</td><td>Limits times, coordinates, samples, and boxes.</td></tr>
+          <tr><td><code>createIdentityTrack</code></td><td>JSON and control header.</td><td>Registers temporary tracking and returns a UUID.</td></tr>
+          <tr><td><code>buildIdentityFilterGraph</code></td><td>Validated tracking.</td><td>Builds pixelation, moving mask, and FFmpeg merge.</td></tr>
+          <tr><td><code>processJobQueue</code></td><td>Global queue.</td><td>Starts jobs up to the limit.</td></tr>
+          <tr><td><code>runJob</code></td><td>Job.</td><td>Coordinates attempts and result.</td></tr>
+          <tr><td><code>runJobAttempt</code></td><td>Job and current URL.</td><td>Runs FFmpeg.</td></tr>
+          <tr><td><code>refreshJobMedia</code></td><td>Persisted job.</td><td>Refreshes URL and media type.</td></tr>
+          <tr><td><code>restartJob</code></td><td>Request, response, and ID.</td><td>Authorizes, stops, and requeues.</td></tr>
+          <tr><td><code>prepareJobForRestart</code></td><td>Job and timestamp.</td><td>Resets state without losing quality or trim range.</td></tr>
+          <tr><td><code>persistJobs</code></td><td>Job map.</td><td>Writes <code>jobs.json</code>.</td></tr>
+          <tr><td><code>initializeJobs</code></td><td>On-disk index.</td><td>Recovers and requeues.</td></tr>
+          <tr><td><code>ensureStorageCapacity</code></td><td>Bytes and protected ID.</td><td>Frees space or fails.</td></tr>
+          <tr><td><code>downloadJob</code></td><td>Request, response, and ID.</td><td>Streams a typed video/audio output or byte range.</td></tr>
+          <tr><td><code>previewMedia</code></td><td>Opaque UUID.</td><td>Resolves in memory, rewrites HLS, or streams media.</td></tr>
+        </tbody></table>
+        <h3><code>public/app.js</code></h3>
+        <p>Active-job monitoring uses a bounded 1.5-second interval. The global panel refreshes every 5 seconds, pauses while the tab is hidden, and coalesces overlapping reads. HTTP 429 is treated as a temporary pause: the browser honors <code>Retry-After</code> and resumes the same job without reporting a false media failure.</p>
+        <table><tbody><tr><td><code>renderResult</code></td><td>Creates the player, quality buttons, and trim controls.</td></tr><tr><td><code>createClipControls</code></td><td>Synchronizes time, sliders, and a media element; reused for remote video, local video, and every local audio source.</td></tr><tr><td><code>prepareDownload</code></td><td>Creates a remote job.</td></tr><tr><td><code>loadSelectedLocalVideo</code></td><td>Creates the video blob preview and mounts the editor.</td></tr><tr><td><code>updateVideoFormatUi</code></td><td>Builds only codec choices compatible with the selected video container.</td></tr><tr><td><code>loadSelectedLocalAudio</code></td><td>Validates 1–20 sources, reads local metadata, and mounts the ordered editor.</td></tr><tr><td><code>showAudioSource</code></td><td>Selects one source and preserves its independent trim range.</td></tr><tr><td><code>uploadLocalAudio</code></td><td>Sends one source with bounded output headers and progress.</td></tr><tr><td><code>uploadJoinedAudio</code></td><td>Builds a versioned metadata prefix and streams ordered source bytes.</td></tr><tr><td><code>exportLocalAudio</code></td><td>Chooses the single or join endpoint and monitors the audio job.</td></tr><tr><td><code>analyzeIdentityFaces</code></td><td>Detects sampled faces and assigns anonymous spatial tracks.</td></tr><tr><td><code>addIdentityRegionAtCurrentTime</code></td><td>Adds a missed-face region at the nearest sampled point.</td></tr><tr><td><code>updateIdentityPointerEdit</code></td><td>Moves or resizes a selected region within normalized video bounds.</td></tr><tr><td><code>reviewIdentityPath</code></td><td>Requires uninterrupted visual review of the protected range.</td></tr><tr><td><code>drawIdentityPreview</code></td><td>Overlays synchronized local pixelation.</td></tr><tr><td><code>registerIdentityTrack</code></td><td>Obtains the single-use UUID for normalized samples.</td></tr><tr><td><code>uploadLocalFile</code></td><td>Sends video bytes, selected profile IDs, and progress.</td></tr><tr><td><code>exportLocalClip</code></td><td>Creates and monitors the local video job.</td></tr><tr><td><code>monitorJob</code></td><td>Polls until a terminal state.</td></tr><tr><td><code>refreshDownloadsPanel</code></td><td>Refreshes, filters, and renders jobs and their event history.</td></tr><tr><td><code>adminRestartSelected</code></td><td>Bulk-restarts selected jobs with administrator authorization.</td></tr><tr><td><code>adminCleanupExpired</code></td><td>Requests removal of expired work and files.</td></tr><tr><td><code>renderHistory</code></td><td>Validates local history.</td></tr></tbody></table>
+      </section>
+
+      <section id="proveedores" class="doc-section">
+        <p class="section-label">09 · Integrations</p><h2>Provider architecture</h2>
+        <p>A provider declares its identity, page rules, CDN domains, HTTP referer, and parser.</p>
+        <p>The current registry contains <code>youtube</code>, <code>xvideos</code>, <code>pornhub</code>, and <code>xnxx</code>. Each integration restricts both the source page and its authorized CDN hosts.</p>
+        <h3>YouTube and adaptive formats</h3>
+        <p><code>providers/youtube.js</code> runs the system <code>yt-dlp</code> on Linux and the package's local binary in other development environments. The provider selects an H.264 track for each resolution and attaches the best M4A track when YouTube delivers audio separately. The job validates both <code>googlevideo.com</code> URLs, keeps them private, refreshes them together, and uses FFmpeg to create one MP4.</p>
+        <div class="notice"><strong>Maintenance.</strong> YouTube changes frequently. If public videos can no longer be analyzed, update the dependencies to obtain a recent <code>yt-dlp</code> version.</div>
+        <pre><code>npm run update:yt-dlp</code></pre>
+        <p>High resolutions display <strong>video + audio</strong>. vDownloader downloads both signed tracks, refreshes them together if they expire, and produces an MP4 with H.264 and AAC-LC. Compatibility is prioritized up to 1080p; 1440p/4K often depends on VP9 or AV1 and is not offered when it would require expensive transcoding.</p>
+        <pre><code>{
+  id: 'example',
+  matches(url) { /* recognizes domain */ },
+  validate(url) { /* validates page */ },
+  isMediaHost(hostname) { /* authorizes CDN */ },
+  referer: 'https://example.com/',
+  parse(html) { /* returns normalized model */ }
+}</code></pre>
+        <h3>Add a provider</h3>
+        <ol><li>Create <code>providers/name.js</code>.</li><li>Implement the contract.</li><li>Register it in <code>providers/index.js</code>.</li><li>Add tests with synthetic HTML.</li><li>Validate analysis, HLS, trimming, audio, and rejected domains.</li></ol>
+      </section>
+
+      <section id="persistencia" class="doc-section">
+        <p class="section-label">10 · State</p><h2>Persistence, queue, and storage</h2>
+        <ul><li><code>jobs</code> is the in-memory map, and <code>jobQueue</code> contains pending IDs.</li><li><code>jobs.json</code> is written through a temporary file and atomic rename.</li><li>Recovered active remote jobs return to <code>queued</code> and refresh their links.</li><li>Local jobs retain relative UUID source names and rebuild paths inside <code>JOB_DIR</code>.</li><li>Joined audio retains ordered source names and per-source clips; recovery requires every source.</li><li>Video/audio container and codec IDs are revalidated while restoring state; persisted data cannot choose an arbitrary encoder, extension, or content type.</li><li>Ready files and every local source expire according to <code>JOB_TTL_MINUTES</code>.</li><li>The quota counts ready outputs and all temporary sources, removing old terminal jobs first.</li><li>Active or queued jobs are never removed because of expiration.</li></ul>
+        <h3>Observability</h3><p>The server emits JSON events such as <code>server_started</code>, <code>job_ready</code>, <code>job_failed</code>, <code>job_restarted_by_admin</code>, and <code>expired_jobs_cleaned</code>. On Linux, they can be queried and filtered directly with <code>journalctl</code>. The panel consumes <code>/api/health</code> and displays FFmpeg and yt-dlp status.</p>
+      </section>
+
+      <section id="frontend" class="doc-section">
+        <p class="section-label">11 · Browser</p><h2>Frontend</h2>
+        <p>Uses native JavaScript, DOM APIs, and CSS; no compiler is required.</p>
+        <ul><li><strong>Languages:</strong> Spanish and English strings live in <code>public/i18n.js</code>; the device-local choice is stored in <code>localStorage</code>.</li><li><strong>HLS.js:</strong> remote HLS playback.</li><li><strong>Local preview:</strong> video and audio use <code>URL.createObjectURL</code>; references are revoked when files change or the tab closes.</li><li><strong>Trimming:</strong> converts HH:MM:SS to seconds and shares synchronized controls across media flows.</li><li><strong>Video output:</strong> container selection rebuilds compatible video and audio codec choices.</li><li><strong>Audio joining:</strong> every source retains its own range and visible order; lossless profiles disable bitrate.</li><li><strong>Upload:</strong> XMLHttpRequest reports binary progress for single and streaming join bodies.</li><li><strong>Polling:</strong> active jobs are checked every 1.5 seconds, the global panel every 5 seconds, overlapping panel reads are coalesced, hidden tabs pause panel polling, and HTTP 429 waits for <code>Retry-After</code> without declaring a false job failure.</li><li><strong>Token:</strong> remains in <code>sessionStorage</code>, never in the URL.</li><li><strong>History:</strong> stores IDs in <code>localStorage</code> and validates them.</li><li><strong>Accessibility:</strong> labels, ARIA attributes, and semantic buttons.</li></ul>
+      </section>
+
+      <section id="estudiantes" class="doc-section">
+        <p class="section-label">12 · Learning</p><h2>Guide for students and junior developers</h2>
+        <div class="learning-grid"><article><strong>Asynchrony</strong><p>Promises, async/await, streams, and processes.</p></article><article><strong>HTTP</strong><p>Methods, status codes, headers, and ranges.</p></article><article><strong>Security</strong><p>Allowlists, SSRF, and validation.</p></article><article><strong>State</strong><p>Maps, queues, and persistence.</p></article><article><strong>Multimedia</strong><p>HLS, H.264, AAC, and FFmpeg.</p></article><article><strong>DOM</strong><p>Events and native components.</p></article></div>
+        <h3>Suggested reading order</h3><ol><li><code>providers/index.js</code>.</li><li>The parsers in <code>providers/</code>.</li><li>The router at the end of <code>server.js</code>.</li><li>The submit event in <code>public/app.js</code>.</li><li>The tests in <code>test/server.test.js</code>.</li></ol>
+        <h3>Exercises</h3><ul><li>Add a retention-related test for <code>JOB_TTL_MINUTES</code>.</li><li>Test an HLS manifest without <code>NAME</code>.</li><li>Add a button that copies the filename.</li><li>Create a fictional provider with stored HTML.</li><li>Compare <code>etaSeconds</code> with actual elapsed time.</li></ul>
+      </section>
+
+      <section id="pruebas" class="doc-section">
+        <p class="section-label">13 · Quality</p><h2>Testing</h2>
+        <h3>Development suite</h3><pre><code>npm test</code></pre>
+        <h3>Deployment quality gate</h3><pre><code>npm run verify:deploy</code></pre>
+        <div class="notice warning"><strong>Deployment rule.</strong> No deployment may proceed while a required category is failed, skipped, unknown, or flaky. The automated gate must pass and the manual release checklist in <code>docs/RELEASE_CHECKLIST.md</code> must be completed with real, sanitized evidence.</div>
+        <p>The gate writes <code>reports/predeploy-report.json</code> and covers all required categories:</p>
+        <ol>
+          <li>Acceptance tests.</li>
+          <li>Unit tests.</li>
+          <li>Property and invariant tests.</li>
+          <li>Mutation testing.</li>
+          <li>Fuzzing.</li>
+          <li>Integration tests.</li>
+          <li>Contract tests.</li>
+          <li>End-to-end tests.</li>
+          <li>Regression tests.</li>
+          <li>Security tests and production dependency audit.</li>
+          <li>Concurrency and resilience tests.</li>
+          <li>Performance and resource tests.</li>
+          <li>Compatibility and deployment tests.</li>
+        </ol>
+        <p>The <code>.github/workflows/linux-ci.yml</code> workflow installs system FFmpeg and yt-dlp on Ubuntu and runs the same deployment gate on every pull request and push to <code>main</code>. Detailed commands, ownership, evidence rules, and limitations are maintained in <code>docs/TESTING.md</code>.</p>
+        <ul class="checklist"><li>Analyze all four providers.</li><li>Play a preview.</li><li>Prepare a 720p clip.</li><li>Export and probe every enabled local video container/codec profile.</li><li>Preview, independently trim, reorder, and join several audio sources.</li><li>Export and probe every enabled audio format/codec profile.</li><li>Restart a joined job and confirm every source remains available.</li><li>Detect faces, review every segment, and confirm pixelation in the selected video output.</li><li>Test small, side-facing, covered faces and entries/exits from the frame.</li><li>Verify YouTube video/audio merging.</li><li>Cancel a job.</li><li>Administratively restart one active and one terminal job.</li><li>Restart the process and recover the queue.</li><li>Confirm HTTP 206 for video and audio.</li><li>Reject external domains.</li><li>Confirm a proxied remote address cannot inherit local privileges.</li><li>Switch between Spanish and English and verify static and dynamic interface text.</li></ul>
+      </section>
+
+      <section id="licencias" class="doc-section">
+        <p class="section-label">14 · Compliance</p><h2>Licenses, CDNs, and local use</h2>
+        <p>A CDN is not a project library: it is the external network from which each provider delivers media. YouTube uses <code>googlevideo.com</code>; XVideos uses <code>xvideos-cdn.com</code>; Pornhub uses <code>phncdn.com</code>; and XNXX uses <code>xnxx-cdn.com</code>. vDownloader allows only these explicitly registered hosts.</p>
+        <h3>Why links expire</h3>
+        <p>Media URLs often contain signatures, tokens, and expiration dates. When they stop working, it does not mean that a library lost its license. vDownloader retains the original page, analyzes it again, and refreshes video and audio tracks together. These URLs exist only in memory: the browser uses opaque UUIDs, and the persistent index does not store CDN signatures.</p>
+        <h3>Direct dependencies</h3>
+        <table><thead><tr><th>Component</th><th>Version</th><th>Declared license</th><th>Purpose</th></tr></thead><tbody>
+          <tr><td><code>ffmpeg-static</code></td><td>5.2.0</td><td>GPL-3.0-or-later</td><td>FFmpeg for trimming, remuxing, and AAC audio.</td></tr>
+          <tr><td>HLS.js</td><td>1.6.13</td><td>Apache-2.0</td><td>HLS preview in the browser.</td></tr>
+          <tr><td><code>@mediapipe/tasks-vision</code></td><td>0.10.35</td><td>Apache-2.0</td><td>Local face detection and WASM runtime.</td></tr>
+          <tr><td>BlazeFace Short Range</td><td>float16, rev. 1</td><td>Apache-2.0 (MediaPipe)</td><td>Local TFLite model for locating faces.</td></tr>
+          <tr><td><code>youtube-dl-exec</code></td><td>3.0.22</td><td>MIT</td><td>Cross-platform yt-dlp installation and execution.</td></tr>
+          <tr><td>yt-dlp</td><td>Updatable</td><td>Unlicense and additional components</td><td>Extraction of public YouTube formats.</td></tr>
+        </tbody></table>
+        <div class="notice warning"><strong>Binary distribution.</strong> The effective license of FFmpeg and yt-dlp artifacts depends on how they were built. Before redistributing them, preserve their notices and verify the applicable license and corresponding-source obligations.</div>
+        <h3>What localhost means</h3>
+        <p>Running vDownloader on <code>localhost</code> reduces service exposure, but does not grant rights to videos or remove terms of use, regional restrictions, or copyright. The application needs Internet access to query provider pages and CDNs.</p>
+        <p>The interface is self-contained: HTML, CSS, JavaScript, favicon, system fonts, HLS.js, MediaPipe, its WASM binaries, and BlazeFace are served locally. It does not use Google Fonts or a library CDN. Thumbnails and media still come from providers because they are part of the requested operation.</p>
+        <h3>vDownloader's own license</h3>
+        <p>Project-owned code is distributed under the MIT license in <code>LICENSE</code>. It permits use, copying, modification, and distribution while retaining the copyright and license notices. It does not alter the independent licenses inventoried in <code>THIRD_PARTY_LICENSES.md</code>.</p>
+      </section>
+
+      <section id="seguridad" class="doc-section">
+        <p class="section-label">15 · Protection</p><h2>Security</h2>
+        <ul><li>Default binding is <code>127.0.0.1</code>; remote mode is explicit and fail-closed.</li><li>Remote mode requires strong bearer profiles and built-in TLS or a trusted HTTPS proxy.</li><li>Forwarding headers are accepted only from a loopback peer; the last forwarded address must be a valid IP, and the supplied Nginx template overwrites client headers.</li><li>User/admin authorization, owner-isolated jobs, per-user active-job quotas, rate limiting, and failed-authentication blocking are enforced by the API.</li><li>Administrative actions are available in the panel audit and emitted as sanitized JSON logs.</li><li>Only recognized HTTPS pages are accepted.</li><li>The CDN must match the provider.</li><li>The browser never receives signed URLs; it uses selections and UUID references.</li><li>CDN tokens are not written to <code>jobs.json</code>.</li><li>Local uploads have format, size, duration, range, codec-combination, and output-profile limits; names and paths are generated with UUIDs.</li><li><code>x-vdownloader-upload</code>, <code>x-vdownloader-audio</code>, and <code>x-vdownloader-audio-join</code> block simple uploads initiated by another page.</li><li>Join metadata is capped at 64 KiB, every byte count is exact, and media streams directly to disk.</li><li>Incomplete uploads are removed, and every complete source is deleted with its job.</li><li>The proxy revalidates every media segment.</li><li>Security headers include CSP, frame denial, no-referrer, permissions restrictions, and HSTS only under verified HTTPS.</li><li>FFmpeg runs without a shell, from the job directory, with a reduced environment.</li><li><code>deploy/systemd/vdownloader.service</code> runs as an unprivileged account, makes system/application paths read-only, restricts capabilities, and allows writes only to the job directory.</li></ul>
+        <p>Linux starting templates and exact ownership steps are maintained in <code>deploy/README.md</code>, <code>deploy/systemd/vdownloader.service</code>, and <code>deploy/nginx/vdownloader.conf</code>. Validate them with representative media on the target distribution.</p>
+        <div class="notice warning"><strong>Private-server boundary.</strong> Configuration-based profiles are not a complete public account system. Internet exposure still requires a hardened identity or reverse-proxy layer, OS isolation, monitoring, backups, and security review.</div>
+        <div class="notice warning"><strong>Not hardened for public exposure.</strong> Before Internet exposure, add authentication, HTTPS, rate limiting, isolation, and monitoring.</div>
+      </section>
+
+      <section id="problemas" class="doc-section">
+        <p class="section-label">16 · Support</p><h2>Troubleshooting</h2>
+        <details><summary>High qualities do not appear</summary><p>Review the HLS manifest and possible provider changes.</p></details>
+        <details><summary>YouTube stopped analyzing videos</summary><p>Update <code>youtube-dl-exec</code> to obtain a recent <code>yt-dlp</code> version: <code>npm install youtube-dl-exec@latest</code>. Private or sign-in-gated videos are not supported.</p></details>
+        <details><summary>The job refreshes its link</summary><p>The CDN link expired; the application automatically looks for a new URL.</p></details>
+        <details><summary>Audio does not play</summary><p>Choose AAC for MP4/MOV or Opus for WebM, and test the selected profile in a current player. H.265 and some MKV combinations are not supported by every browser.</p></details>
+        <details><summary>The preview does not load</summary><p>Check the <code>/api/media/:id</code> reference, network access, and regional restrictions. If the UUID expired, analyze the video again.</p></details>
+        <details><summary>Storage is full</summary><p>Delete jobs or increase <code>MAX_STORAGE_GB</code>.</p></details>
+        <details><summary>The local file cannot be previewed</summary><p>Convert the source to MP4/H.264 or try another browser. The application can export only files whose duration the browser can read.</p></details>
+        <details><summary>The local upload is too large</summary><p>Increase <code>MAX_UPLOAD_GB</code> without exceeding <code>MAX_STORAGE_GB</code>, or transcode the file before uploading it.</p></details>
+        <details><summary>A local media export fails</summary><p>Confirm every source has a browser-readable duration and a valid range. Audio joins allow at most 20 sources and 12 selected hours. Optional profiles require their FFmpeg encoders: <code>libmp3lame</code>, <code>libvorbis</code>, <code>libopus</code>, <code>libx265</code>, or <code>libvpx-vp9</code>. Run <code>npm run test:e2e</code> to exercise synthetic single-audio, joined-audio, and video-transcode journeys.</p></details>
+        <details><summary>Remote requests through Nginx are unauthorized</summary><p>Remote requests must include a configured bearer token. Keep Node on loopback and make Nginx overwrite <code>X-Forwarded-For</code> and <code>X-Forwarded-Proto</code> as shown in <code>deploy/nginx/vdownloader.conf</code>. Never turn proxied clients into the local administrator.</p></details>
+        <details><summary>Restart returns access denied</summary><p>For remote mode, use a token whose <code>ACCESS_TOKENS_JSON</code> profile has the <code>admin</code> role. For local-only mode, loopback is administrator access; if legacy <code>ADMIN_TOKEN</code> is configured, enter that value in the administrator token field.</p></details>
+        <details><summary>The server reports too many requests</summary><p>Normal polling remains below the default request budget. If HTTP 429 is still returned because several clients share one address or the configured budget is unusually low, job monitoring honors <code>Retry-After</code>, displays a temporary pause, and resumes automatically without marking the media job as failed.</p></details>
+        <details><summary>Port already in use</summary><pre><code>$env:PORT = 4444
+npm start</code></pre></details>
+      </section>
+
+      <section id="contribuir" class="doc-section">
+        <p class="section-label">17 · GitHub</p><h2>Contributing</h2>
+        <ol><li>Create a descriptive branch.</li><li>Keep the change focused.</li><li>Add tests.</li><li>Run <code>npm test</code>.</li><li>Run <code>npm run verify:deploy</code> before release.</li><li>Complete the manual release checklist.</li><li>Update documentation.</li><li>Open a pull request with evidence.</li></ol>
+        <h3>Continuity between Codex sessions</h3>
+        <p><code>AGENTS.md</code> contains mandatory working rules, and <code>CURRENT_STATUS.md</code> records the current phase, decisions, tests, risks, and next steps. A new session must read both files before editing. After completing functional work, it must update <code>CURRENT_STATUS.md</code> with verifiable evidence.</p>
+        <p>Convention: code identifiers and documentation are in English; the interface supports Spanish and English. Never commit videos, cookies, tokens, or <code>data/jobs</code>.</p>
+      </section>
+
+      <section id="glosario" class="doc-section">
+        <p class="section-label">18 · Reference</p><h2>Glossary</h2>
+        <dl class="glossary"><dt>AAC-LC</dt><dd>Compatible lossy audio codec used by MP4, MOV, MKV, and M4A profiles.</dd><dt>Bitrate</dt><dd>Approximate number of audio bits stored per second; higher values usually increase size and retained quality.</dd><dt>Codec</dt><dd>Algorithm that encodes or decodes a media stream, such as H.264, VP9, AAC, or Opus.</dd><dt>Container</dt><dd>File structure that holds streams, such as MP4, WebM, MKV, OGG, or M4A.</dd><dt>CDN</dt><dd>A network that delivers video files.</dd><dt>CORS</dt><dd>Browser restrictions between origins.</dd><dt>FFmpeg</dt><dd>The system tool that prepares video and audio outputs.</dd><dt>HLS</dt><dd>Streaming based on manifests and segments.</dd><dt>PCM</dt><dd>Uncompressed sampled audio used by WAV output.</dd><dt>Remux</dt><dd>Change the container without transcoding video.</dd><dt>Transcode</dt><dd>Decode a media stream and encode it using another format or profile.</dd><dt>SSRF</dt><dd>Malicious use of a server to query arbitrary destinations.</dd></dl>
+      </section>
+
+      <footer class="docs-footer"><a href="#introduccion">↑ Back to top</a><span>vDownloader · local documentation</span></footer>
+    </main>
+  </div>
+</body>
+</html>

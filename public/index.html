@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="vDownloader downloads supported videos and provides local video trimming and audio transcoding tools.">
+  <title>vDownloader</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css?v=9">
+</head>
+<body>
+  <main class="shell">
+    <nav class="nav" aria-label="Navegación principal" data-i18n-aria="nav.main">
+      <a class="brand" href="/" aria-label="vDownloader, inicio" data-i18n-aria="nav.home"><span>vD</span> vDownloader</a>
+      <div class="nav-actions">
+        <label class="language-picker">
+          <span class="sr-only" data-i18n="language.label">Idioma de la interfaz</span>
+          <select id="language-select">
+            <option value="es">Español</option>
+            <option value="en">English</option>
+          </select>
+        </label>
+        <a class="docs-link" href="/docs.html" data-i18n="nav.docs">Documentación</a>
+        <span class="status"><i></i> <span data-i18n="nav.status">Servicio local</span></span>
+      </div>
+    </nav>
+
+    <section class="hero">
+      <p class="eyebrow" data-i18n="hero.eyebrow">Multifuente · local · controlado</p>
+      <h1><span data-i18n="hero.title.before">Tu video, en la</span><br><em data-i18n="hero.title.emphasis">calidad que prefieras.</em></h1>
+      <p class="intro" data-i18n="hero.intro">Descarga videos compatibles o usa las herramientas locales para recortar video y convertir audio.</p>
+
+      <form id="analyze-form" class="search-card">
+        <label for="video-url" data-i18n="search.label">Enlace del video</label>
+        <div class="input-row">
+          <span class="link-icon" aria-hidden="true">↗</span>
+          <input id="video-url" name="url" type="url" required autocomplete="url" spellcheck="false"
+                 placeholder="Pega un enlace de YouTube u otro sitio compatible…" data-i18n-placeholder="search.placeholder">
+          <button id="submit-button" type="submit"><span data-i18n="search.action">Analizar</span><b aria-hidden="true">→</b></button>
+        </div>
+        <p id="form-message" class="message" role="status" aria-live="polite"></p>
+      </form>
+
+      <section class="local-upload-card" aria-labelledby="local-upload-title">
+        <div class="local-upload-header">
+          <div>
+            <span data-i18n="local.eyebrow">Editor local</span>
+            <h2 id="local-upload-title" data-i18n="local.title">Recorta un archivo de tu equipo</h2>
+            <p data-i18n="local.description">La vista previa permanece en tu navegador. El archivo se carga temporalmente solo cuando presionas Exportar.</p>
+          </div>
+          <label class="local-file-picker" for="local-video-file">
+            <span data-i18n="local.select">Seleccionar video</span>
+            <input id="local-video-file" type="file" accept=".mp4,.m4v,.mov,.webm,video/mp4,video/quicktime,video/webm" hidden>
+          </label>
+        </div>
+        <p id="local-upload-message" class="local-upload-message" role="status" aria-live="polite"></p>
+        <div id="local-editor" class="local-editor" hidden>
+          <div class="local-preview-stage">
+            <video id="local-video-preview" class="local-video-preview" controls preload="metadata" playsinline></video>
+            <canvas id="identity-preview" aria-hidden="true"></canvas>
+          </div>
+          <div class="local-editor-body">
+            <strong id="local-file-name"></strong>
+            <span id="local-file-meta"></span>
+            <div id="local-clip-mount"></div>
+            <div class="audio-output-settings video-output-settings">
+              <label for="video-output-format">
+                <span data-i18n="video.outputFormat">Formato de salida</span>
+                <select id="video-output-format">
+                  <option value="mp4">MP4</option>
+                  <option value="mov">MOV</option>
+                  <option value="webm">WebM</option>
+                  <option value="mkv">MKV</option>
+                </select>
+              </label>
+              <label for="video-output-codec">
+                <span data-i18n="video.videoCodec">Códec de video</span>
+                <select id="video-output-codec"></select>
+              </label>
+              <label for="video-audio-codec">
+                <span data-i18n="video.audioCodec">Códec de audio</span>
+                <select id="video-audio-codec"></select>
+              </label>
+            </div>
+            <p id="video-output-hint" class="audio-output-hint" data-i18n="video.outputHint">H.264 ofrece mayor compatibilidad; H.265 y VP9 reducen el tamaño pero requieren más tiempo.</p>
+            <section class="identity-card" aria-labelledby="identity-title">
+              <div class="identity-heading">
+                <div>
+                  <span data-i18n="identity.eyebrow">Nueva función</span>
+                  <h3 id="identity-title" data-i18n="identity.title">Protección de identidad</h3>
+                </div>
+                <label class="identity-switch">
+                  <input id="identity-enabled" type="checkbox">
+                  <i aria-hidden="true"></i>
+                  <span data-i18n="identity.activate">Activar</span>
+                </label>
+              </div>
+              <div id="identity-controls" class="identity-controls" hidden>
+                <p data-i18n="identity.description">Detecta los rostros dentro del recorte y muestra una vista previa pixelada antes de exportar. Revisa siempre el resultado.</p>
+                <div class="identity-settings">
+                  <label>
+                    <span class="setting-label" data-i18n="identity.padding">Margen alrededor del rostro</span>
+                    <span><input id="identity-padding" type="range" min="15" max="60" step="5" value="40"><output id="identity-padding-value">40%</output></span>
+                  </label>
+                  <label>
+                    <span class="setting-label" data-i18n="identity.intensity">Intensidad del pixelado</span>
+                    <span><input id="identity-block-size" type="range" min="8" max="48" step="4" value="20"><output id="identity-block-value">20</output></span>
+                  </label>
+                </div>
+                <div class="identity-actions">
+                  <button id="identity-analyze" type="button" data-i18n="identity.detect">Detectar rostros</button>
+                  <button id="identity-clear" class="secondary-action" type="button" hidden data-i18n="identity.clear">Limpiar análisis</button>
+                </div>
+                <div id="identity-editor-tools" class="identity-editor-tools" hidden>
+                  <div>
+                    <strong data-i18n="identity.people">Personas detectadas</strong>
+                    <div id="identity-track-list" class="identity-track-list"></div>
+                  </div>
+                  <div class="identity-manual-actions">
+                    <button id="identity-edit" type="button" class="secondary-action" data-i18n="identity.edit">Editar regiones</button>
+                    <button id="identity-add" type="button" class="secondary-action" data-i18n="identity.add">Agregar región aquí</button>
+                    <button id="identity-delete" type="button" class="secondary-action" disabled data-i18n="identity.delete">Eliminar región</button>
+                    <button id="identity-review" type="button" data-i18n="identity.review">Revisar recorrido</button>
+                  </div>
+                  <p data-i18n="identity.editHelp">En modo edición, arrastra una región para moverla y usa su esquina inferior derecha para cambiar el tamaño. Los cambios se aplican al punto actual.</p>
+                  <label class="identity-review-check">
+                    <input id="identity-reviewed" type="checkbox" disabled>
+                    <span data-i18n="identity.reviewConfirm">Confirmo que revisé visualmente todo el recorrido protegido.</span>
+                  </label>
+                </div>
+                <div class="identity-progress" id="identity-progress" hidden><i></i></div>
+                <p id="identity-message" class="identity-message" role="status" aria-live="polite"></p>
+              </div>
+            </section>
+            <button id="local-export-button" type="button" data-i18n="local.exportClip">Exportar recorte</button>
+            <div id="local-jobs-area" class="jobs-area"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="local-upload-card audio-tool-card" aria-labelledby="audio-tool-title">
+        <div class="local-upload-header">
+          <div>
+            <span data-i18n="audio.eyebrow">Herramienta de audio</span>
+            <h2 id="audio-tool-title" data-i18n="audio.title">Recorta, une y convierte audios</h2>
+            <p data-i18n="audio.description">Selecciona uno o varios audios, ajusta cada intervalo y elige su formato y códec de salida.</p>
+          </div>
+          <label class="local-file-picker" for="local-audio-file">
+            <span data-i18n="audio.select">Seleccionar audios</span>
+            <input id="local-audio-file" type="file" multiple accept=".mp3,.m4a,.aac,.wav,.flac,.ogg,.opus,audio/mpeg,audio/mp4,audio/aac,audio/wav,audio/flac,audio/ogg,audio/opus" hidden>
+          </label>
+        </div>
+        <p id="audio-upload-message" class="local-upload-message" role="status" aria-live="polite"></p>
+        <div id="audio-editor" class="local-editor audio-editor" hidden>
+          <div class="audio-preview-stage">
+            <audio id="local-audio-preview" class="local-audio-preview" controls preload="metadata"></audio>
+          </div>
+          <div class="local-editor-body">
+            <strong id="audio-file-name"></strong>
+            <span id="audio-file-meta"></span>
+            <div id="audio-source-list" class="audio-source-list" aria-label="Audios para unir" data-i18n-aria="audio.sourceList"></div>
+            <div id="audio-clip-mount"></div>
+            <div class="audio-output-settings">
+              <label for="audio-output-format">
+                <span data-i18n="audio.outputFormat">Formato de salida</span>
+                <select id="audio-output-format">
+                  <option value="mp3">MP3</option>
+                  <option value="m4a">M4A / AAC</option>
+                  <option value="ogg">OGG</option>
+                  <option value="opus">Opus</option>
+                  <option value="flac">FLAC</option>
+                  <option value="wav">WAV</option>
+                </select>
+              </label>
+              <label for="audio-output-codec">
+                <span data-i18n="audio.codec">Códec</span>
+                <select id="audio-output-codec"></select>
+              </label>
+              <label for="audio-output-bitrate">
+                <span data-i18n="audio.bitrate">Calidad del audio</span>
+                <select id="audio-output-bitrate">
+                  <option value="96">96 kbps</option>
+                  <option value="128">128 kbps</option>
+                  <option value="192" selected>192 kbps</option>
+                  <option value="256">256 kbps</option>
+                  <option value="320">320 kbps</option>
+                </select>
+              </label>
+            </div>
+            <p id="audio-output-hint" class="audio-output-hint" data-i18n="audio.compressedHint">El formato limita los códecs compatibles. FLAC y WAV no usan tasa de bits.</p>
+            <button id="audio-export-button" type="button" data-i18n="audio.export">Exportar audio</button>
+            <div id="audio-jobs-area" class="jobs-area"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="result" class="result" aria-live="polite" hidden></section>
+      <section id="downloads-panel" class="downloads-panel">
+        <div class="panel-header">
+          <div><span data-i18n="downloads.eyebrow">Centro de descargas</span><h2 data-i18n="downloads.title">Tareas del servidor</h2></div>
+          <div id="panel-config" class="panel-config"></div>
+        </div>
+        <div id="dependency-health" class="dependency-health" aria-label="Estado de dependencias" data-i18n-aria="downloads.healthAria"></div>
+        <details class="admin-tools">
+          <summary data-i18n="admin.summary">Administración de tareas</summary>
+          <div class="admin-tools-body">
+            <label for="admin-token" data-i18n="admin.token">Token administrador</label>
+            <input id="admin-token" type="password" autocomplete="off" placeholder="Opcional en localhost" data-i18n-placeholder="admin.placeholder">
+            <label for="access-token" data-i18n="security.accessToken">Token de acceso</label>
+            <input id="access-token" type="password" autocomplete="off" placeholder="Solo para acceso remoto" data-i18n-placeholder="security.accessPlaceholder">
+            <p id="admin-hint" data-i18n="admin.localHint">La administración local no requiere token.</p>
+          </div>
+        </details>
+        <div class="panel-controls" aria-label="Filtros y acciones administrativas" data-i18n-aria="admin.controlsAria">
+          <select id="panel-status-filter" data-i18n-aria="admin.filterStatusAria">
+            <option value="" data-i18n="admin.allStatuses">Todos los estados</option>
+            <option value="queued" data-i18n="status.queued">En cola</option>
+            <option value="processing" data-i18n="job.processing">Procesando</option>
+            <option value="retrying" data-i18n="status.refreshingShort">Reintentando</option>
+            <option value="restarting" data-i18n="status.restarting">Reiniciando</option>
+            <option value="ready" data-i18n="format.ready">Lista</option>
+            <option value="error">Error</option>
+            <option value="cancelled" data-i18n="status.cancelled">Cancelada</option>
+          </select>
+          <select id="panel-provider-filter" data-i18n-aria="admin.filterProviderAria">
+            <option value="" data-i18n="admin.allProviders">Todos los proveedores</option>
+            <option value="youtube">YouTube</option><option value="xvideos">XVideos</option><option value="pornhub">Pornhub</option><option value="xnxx">XNXX</option><option value="upload" data-i18n="provider.upload">Archivo local</option><option value="audio" data-i18n="provider.audio">Audio local</option>
+          </select>
+          <select id="panel-date-filter" data-i18n-aria="admin.filterDateAria">
+            <option value="" data-i18n="admin.allDates">Todas las fechas</option>
+            <option value="today" data-i18n="admin.today">Hoy</option>
+            <option value="week" data-i18n="admin.lastWeek">7 días</option>
+            <option value="month" data-i18n="admin.lastMonth">30 días</option>
+          </select>
+          <button id="admin-restart-selected" type="button" disabled data-i18n="admin.restartSelected">Reiniciar seleccionadas</button>
+          <button id="admin-clean-expired" type="button" class="secondary-action" data-i18n="admin.cleanExpired">Limpiar vencidas</button>
+          <button id="admin-refresh-audit" type="button" class="secondary-action" data-i18n="admin.audit">Auditoría</button>
+        </div>
+        <div id="admin-audit" class="admin-audit" hidden></div>
+        <p id="panel-message" class="panel-message" role="status" aria-live="polite"></p>
+        <div id="panel-stats" class="panel-stats"></div>
+        <div id="panel-jobs" class="panel-jobs"></div>
+      </section>
+      <section id="history" class="history" hidden>
+        <div class="history-header"><div><span data-i18n="history.eyebrow">Archivos recientes</span><h2 data-i18n="history.title">Listos para descargar</h2></div><button id="clear-history" type="button" data-i18n="history.clear">Limpiar</button></div>
+        <div id="history-list" class="history-list"></div>
+      </section>
+    </section>
+
+    <section class="features" aria-label="Características" data-i18n-aria="features.aria">
+      <article><span>01</span><div><h2 data-i18n="features.noAccounts.title">Sin registros</h2><p data-i18n="features.noAccounts.description">No requiere cuentas ni guarda un historial de tus enlaces.</p></div></article>
+      <article><span>02</span><div><h2 data-i18n="features.quality.title">Calidad disponible</h2><p data-i18n="features.quality.description">Muestra las variantes MP4 y HLS publicadas por el reproductor.</p></div></article>
+      <article><span>03</span><div><h2 data-i18n="features.recovery.title">Descarga recuperable</h2><p data-i18n="features.recovery.description">Prepara archivos completos, persistentes y reanudables durante el periodo configurado.</p></div></article>
+    </section>
+
+    <footer>
+      <p data-i18n="footer.rights">Úsalo solo con contenido que tengas derecho a descargar.</p>
+      <p data-i18n="footer.adult">Los sitios para adultos son solo para mayores de 18 años.</p>
+    </footer>
+  </main>
+  <script src="/vendor/hls.min.js"></script>
+  <script src="/app.js?v=22" type="module"></script>
+</body>
+</html>

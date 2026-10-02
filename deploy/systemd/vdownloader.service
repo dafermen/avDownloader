@@ -1,0 +1,39 @@
+[Unit]
+Description=vDownloader private media preparation service
+Documentation=file:/opt/vdownloader/current/docs/DEPLOYMENT.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=vdownloader
+Group=vdownloader
+WorkingDirectory=/opt/vdownloader/current
+EnvironmentFile=/etc/vdownloader/vdownloader.env
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+KillSignal=SIGTERM
+UMask=0077
+
+# The application tree and operating system remain read-only. Only persisted
+# jobs are writable; temporary FFmpeg files are redirected there by the app.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/vdownloader/jobs
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

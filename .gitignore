@@ -1,0 +1,17 @@
+node_modules/
+.tools/
+.env
+.env.*
+!.env.example
+.npmrc
+*.pem
+*.key
+*.p12
+*.pfx
+*.log
+coverage/
+reports/
+mutation-report/
+data/jobs/
+.DS_Store
+Thumbs.db
