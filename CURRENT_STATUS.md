@@ -312,6 +312,13 @@ Validation on Windows, 2026-10-01:
   Windows and Linux. A compatibility regression test enforces this invariant.
 - GitHub-maintained checkout and Node setup actions are pinned to the immutable
   commits for official versions 7.0.1 and 7.0.0 instead of mutable major tags.
+- The corrected source commit `5b16a1b` passed Linux CI run `36958072570` on a
+  clean Ubuntu runner: system FFmpeg and yt-dlp installation, npm dependency
+  installation, all deployment-gate categories, and the live health-endpoint
+  check completed successfully.
+- The project is published on the `main` branch at
+  `https://github.com/dafermen/avDownloader` with repository documentation,
+  issue forms, pull request template, Linux CI, and the sanitized real capture.
 
 ## Validation still pending
 
