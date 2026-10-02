@@ -306,12 +306,17 @@ Validation on Windows, 2026-10-01:
 - Ignore rules were expanded so all of `data/jobs`, `.env.*` except the example,
   npm credentials, private-key containers, logs, reports, local tools, and
   operating-system metadata remain outside the repository.
+- The first real Ubuntu workflow correctly failed its deployment gate when
+  quoted npm glob patterns were not expanded by its POSIX shell. The main, unit, and E2E
+  scripts now use Node discovery or explicit files so they are portable across
+  Windows and Linux. A compatibility regression test enforces this invariant.
+- GitHub-maintained checkout and Node setup actions are pinned to the immutable
+  commits for official versions 7.0.1 and 7.0.0 instead of mutable major tags.
 
 ## Validation still pending
 
 - Complete `docs/RELEASE_CHECKLIST.md` with a real release candidate. The
   automated gate does not replace manual acceptance.
-- Run the updated GitHub Actions workflow in a real Ubuntu repository runner.
 - Install and exercise the new systemd and Nginx templates on the target Linux
   distribution, including video/audio media, permissions, storage, restart,
   proxy headers, HTTPS, and rollback.
@@ -331,7 +336,6 @@ Validation on Windows, 2026-10-01:
   blocking, large authenticated downloads, and reverse-proxy configuration.
 - Add operating-system or container sandboxing for FFmpeg before treating
   arbitrary hostile uploads as a supported public threat model.
-- Run GitHub Actions in a real remote repository.
 - Repeat a real YouTube download with separate audio.
 - Review the panel on a mobile screen.
 - Test real MOV and WebM inputs and every MP4/MOV/WebM/MKV output profile in
