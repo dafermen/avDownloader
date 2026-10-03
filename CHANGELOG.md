@@ -1,5 +1,9 @@
 # Changelog
 
+## Documentation navigation candidate — 2026-10-03
+
+InnovaLogic visual family, reading paths, collapsible navigation where applicable, code copy and keyboard image enlargement. Local validation and delivery status are recorded in docs/WEB_NAVIGATION.md.
+
 All notable project changes are documented in this file. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 semantic versioning for published releases.

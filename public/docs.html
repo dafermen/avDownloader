@@ -8,15 +8,17 @@
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css?v=9">
   <link rel="stylesheet" href="/docs.css?v=2">
+<link rel="stylesheet" href="/innovalogic-docs.css">
+<script defer src="/docs-reading-tools.js"></script>
 </head>
 <body>
-  <header class="docs-topbar">
+  <a class="skip-link" href="#introduccion">Skip to content</a><header class="docs-topbar"><button id="docs-menu" type="button" aria-controls="docs-sidebar" aria-expanded="false">Menu</button>
     <a class="brand" href="/" aria-label="Return to vDownloader"><span>vD</span> vDownloader</a>
-    <div class="docs-top-actions"><a href="/">← Back to the application</a><span>Documentation v1.1</span></div>
+    <div class="docs-search"><input id="docs-search" type="search" aria-label="Search documentation" placeholder="Search documentation"><div id="docs-results" hidden></div></div><div class="docs-top-actions"><button id="docs-theme" type="button">Dark mode</button><a href="/" aria-label="Back to the application">← App</a><span>Documentation v1.1</span></div>
   </header>
 
   <div class="docs-layout">
-    <aside class="docs-sidebar">
+    <aside id="docs-sidebar" class="docs-sidebar">
       <p>Contents</p>
       <nav aria-label="Documentation index">
         <a href="#introduccion">Introduction</a><a href="#inicio">Quick start</a><a href="#usuario">User guide</a><a href="#archivo-local">Local video</a><a href="#audio-local">Local audio</a><a href="#sitios-compatibles">Supported sites</a>
@@ -28,7 +30,7 @@
       </nav>
     </aside>
 
-    <main class="docs-content">
+    <main class="docs-content"><nav class="docs-reading-paths" aria-label="Reading paths"><a href="#introduccion"><strong>Discover the product</strong><span>Purpose and capabilities.</span></a><a href="#usuario"><strong>Learn to use it</strong><span>Video and audio workflows.</span></a><a href="#estudiantes"><strong>Explore development</strong><span>Code, architecture and tests.</span></a></nav>
       <section id="introduccion" class="docs-hero">
         <p class="docs-kicker">Complete documentation · users · development · learning</p>
         <h1>vDownloader,<br><em>explained from end to end.</em></h1>
@@ -440,8 +442,9 @@ npm start</code></pre></details>
         <dl class="glossary"><dt>AAC-LC</dt><dd>Compatible lossy audio codec used by MP4, MOV, MKV, and M4A profiles.</dd><dt>Bitrate</dt><dd>Approximate number of audio bits stored per second; higher values usually increase size and retained quality.</dd><dt>Codec</dt><dd>Algorithm that encodes or decodes a media stream, such as H.264, VP9, AAC, or Opus.</dd><dt>Container</dt><dd>File structure that holds streams, such as MP4, WebM, MKV, OGG, or M4A.</dd><dt>CDN</dt><dd>A network that delivers video files.</dd><dt>CORS</dt><dd>Browser restrictions between origins.</dd><dt>FFmpeg</dt><dd>The system tool that prepares video and audio outputs.</dd><dt>HLS</dt><dd>Streaming based on manifests and segments.</dd><dt>PCM</dt><dd>Uncompressed sampled audio used by WAV output.</dd><dt>Remux</dt><dd>Change the container without transcoding video.</dd><dt>Transcode</dt><dd>Decode a media stream and encode it using another format or profile.</dd><dt>SSRF</dt><dd>Malicious use of a server to query arbitrary destinations.</dd></dl>
       </section>
 
-      <footer class="docs-footer"><a href="#introduccion">↑ Back to top</a><span>vDownloader · local documentation</span></footer>
+      <nav class="docs-pagination" aria-label="Previous and next sections"></nav><footer class="docs-footer"><a href="#introduccion">↑ Back to top</a><span>vDownloader · local documentation</span></footer>
     </main>
   </div>
+<script defer src="/docs-navigation.js"></script>
 </body>
 </html>
