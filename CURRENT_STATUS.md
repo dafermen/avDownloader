@@ -26,13 +26,14 @@ syntax gate passes. Sanitized Chrome renders were reviewed at 1440 px and the
 500 px mobile breakpoint; the new captures are in `docs/images/`. A live
 analysis of `T27J0SDQ2FM` returned six video qualities, audio, and caption
 tracks without exposing a Googlevideo URL. Interactive controls, a real
-interrupted/resumed YouTube transfer, the Linux deployment gate, and remote
+interrupted/resumed YouTube transfer, the manual release checklist, and remote
 deployment are still pending at this checkpoint.
 
 `npm run verify:deploy` also passed all thirteen automated categories, syntax,
 3/3 mutation checks, and the production dependency audit with zero reported
-vulnerabilities. This is automated Windows evidence only: the manual release
-checklist and GitHub-hosted Ubuntu workflow remain required before deployment.
+vulnerabilities. GitHub-hosted Linux CI run `42158057063` also passed the
+deployment gate and system-tool health check on Node.js 20 / Ubuntu. The manual
+release checklist remains required before deployment.
 
 ## Reliable YouTube download and audio export — local candidate, 2026-11-04
 
