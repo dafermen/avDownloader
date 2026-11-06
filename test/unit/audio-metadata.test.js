@@ -3,11 +3,43 @@ import assert from 'node:assert/strict';
 import {
   attachmentContentDisposition,
   normalizeAudioUploadMetadata,
+  normalizeEditableSrt,
+  normalizeSubtitleCompositionMetadata,
   normalizeSubtitleUploadMetadata,
   normalizeTranscriptionUploadMetadata,
   normalizeVideoAudioExtractionMetadata,
   subtitleDownloadFilename
 } from '../../server.js';
+
+test('validates editable SRT and fixed MP4 subtitle composition profiles', () => {
+  const normalized = normalizeEditableSrt(
+    '7\r\n00:00:01,000 --> 00:00:03,500\r\nHello world\r\n\r\n9\r\n00:00:04,000 --> 00:00:05,000\r\nSecond cue\r\n'
+  );
+  assert.equal(normalized.cues.length, 2);
+  assert.match(normalized.text, /^1\n00:00:01,000 --> 00:00:03,500/m);
+  assert.match(normalized.text, /\n2\n00:00:04,000/);
+  assert.throws(() => normalizeEditableSrt(
+    '1\n00:00:03,000 --> 00:00:02,000\nInvalid'
+  ), /fragmento 1/i);
+
+  const profile = normalizeSubtitleCompositionMetadata({
+    fileName: 'training.mp4',
+    contentType: 'video/mp4',
+    mediaLength: 10_000,
+    totalBytes: 10_100,
+    subtitleBytes: 100,
+    duration: 30,
+    start: 0,
+    end: 30,
+    mode: 'selectable'
+  });
+  assert.equal(profile.outputFormat, 'mp4');
+  assert.equal(profile.mode, 'selectable');
+  assert.throws(() => normalizeSubtitleCompositionMetadata({
+    fileName: 'training.mp4', contentType: 'video/mp4', mediaLength: 10_000,
+    totalBytes: 10_100, subtitleBytes: 100, duration: 30, start: 1, end: 30, mode: 'burned'
+  }), /video completo/i);
+});
 
 test('preserves the source base name for subtitle downloads', () => {
   const filename = subtitleDownloadFilename('Lección técnica final 1.2.mp4', '.srt', true);

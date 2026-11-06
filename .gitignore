@@ -14,5 +14,6 @@ reports/
 mutation-report/
 data/jobs/
 data/models/
+data/playwright-jobs/
 .DS_Store
 Thumbs.db

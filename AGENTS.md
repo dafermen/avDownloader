@@ -66,6 +66,14 @@ restrictions, or DRM.
   worker, keeps audio local, deletes temporary PCM, and caches model artifacts
   outside Git. Preserve the recorded architecture, privacy, dependency,
   resource, and license decisions.
+- The SRT workshop accepts at most 2,000 canonical timed cues. Local
+  English-to-Spanish translation uses only the fixed
+  `Xenova/opus-mt-en-es` model in `translation-worker.js`; the browser cannot
+  choose a model, path, or language pair. Video composition accepts one
+  allowlisted complete video plus an exact bounded SRT prefix and creates only
+  H.264/AAC MP4 with either selectable `mov_text` or burned subtitles. Preserve
+  the composition control headers, streaming writes, persistence, restart,
+  quota accounting, and cleanup of the private SRT.
 - Spanish and English interface strings live in `public/i18n.js`. Keep both
   languages complete when visible behavior changes. Documentation remains
   English-only.
@@ -107,6 +115,11 @@ restrictions, or DRM.
   `x-vdownloader-transcription: 1` plus allowlisted language and model profile.
   Never accept a model URL, caption URL, output extension, internal path, or
   arbitrary process argument from a client.
+- Subtitle translation additionally requires `x-vdownloader-translation: 1`;
+  subtitle composition additionally requires
+  `x-vdownloader-subtitle-compose: 1`, exact SRT/media byte counts, and the
+  regular upload controls. Never log or expose subtitle text, model/cache
+  paths, or the UUID-owned SRT filename.
 - The panel token is stored only in `sessionStorage`, never in a URL.
 - Remote browser downloads must first create a short-lived, job-scoped grant
   with `x-vdownloader-download: 1`. The grant is an HttpOnly, SameSite=Strict
@@ -184,6 +197,7 @@ npm test
 node --check server.js
 node --check public/app.js
 node --check public/i18n.js
+node --check translation-worker.js
 node --check providers/index.js
 node --check providers/youtube.js
 node --check providers/xvideos.js
@@ -191,6 +205,9 @@ node --check providers/pornhub.js
 node --check providers/xnxx.js
 node --check providers/utils.js
 ```
+
+Visible interface changes also require `npm run test:visual`; intentional
+snapshot changes must be reviewed before running `npm run test:visual:update`.
 
 When the API or job flow changes, add a test. When visible behavior changes,
 update both UI language dictionaries, `README.md`, and `public/docs.html`.

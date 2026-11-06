@@ -18,7 +18,8 @@ Node.js HTTP server
   |-- persistence -> JOB_DIR/jobs.json
   |-- static interface and local third-party assets
   |-- FFmpeg / yt-dlp process -> allowlisted media or existing subtitles
-  `-- transcription worker -> cached Transformers.js Whisper -> SRT/WebVTT
+  |-- transcription worker -> cached Transformers.js Whisper -> SRT/WebVTT
+  `-- translation worker -> fixed cached Opus-MT English-to-Spanish model
 ```
 
 ## Components
@@ -27,6 +28,8 @@ Node.js HTTP server
   persistence, FFmpeg execution, cleanup, and administration.
 - `transcription-worker.js`: isolated local Whisper inference, PCM validation,
   timestamp normalization, and SRT/WebVTT rendering.
+- `translation-worker.js`: isolated fixed-model English-to-Spanish subtitle
+  text translation with cue-count preservation.
 - `providers/`: provider matching, page validation, page analysis, media-host
   allowlists, yt-dlp integration, and HLS parsing.
 - `public/`: browser interface, bilingual dictionaries, shared video/audio
@@ -58,7 +61,9 @@ mode binds to loopback and uses the built-in `local` administrator.
    length-prefixed envelope and stream each declared file to its own UUID path.
    Subtitle jobs accept only an opaque YouTube track selection, a bounded
    embedded-track ordinal, or allowlisted local transcription language/model
-   profiles and the SRT/WebVTT output allowlist.
+   profiles and the SRT/WebVTT output allowlist. Subtitle composition adds one
+   bounded canonical SRT prefix and a complete allowlisted video; translation
+   accepts only bounded cue text and one fixed language/model pair.
 4. FFmpeg, yt-dlp, and the transcription worker are child processes. Arguments
    must be structured, paths controlled by the server, and failures treated as
    data rather than shell commands.
@@ -92,6 +97,17 @@ allowlisted Whisper model through Transformers.js, writes SRT/WebVTT, and the
 server deletes the PCM in all terminal paths. Model artifacts are the only
 network-fetched transcription data and live in `TRANSCRIPTION_CACHE_DIR`.
 
+Editable subtitle composition persists the UUID-owned video and private SRT as
+one ordinary video job. Both inputs count toward quota and survive restart;
+expiration, deletion, and terminal cleanup remove both. Selectable output maps
+the validated SRT to `mov_text`; burned output uses a server-owned FFmpeg
+subtitle filter. No subtitle text enters logs or the public job model.
+
+The browser derives preflight estimates from public size/duration metadata and
+the latest storage summary. Completion notification preferences stay in local
+browser storage. Downloadable diagnostics are assembled from a bounded
+sanitized in-memory event ring and public runtime/job facts only.
+
 When Nginx terminates TLS, the Node service remains on loopback. Forwarding
 headers are trusted only from a loopback peer, the last forwarded client
 address is validated as an IP address, and remote users still authenticate with
@@ -107,5 +123,7 @@ built-in local administrator.
 - Remote defense: opt-in network binding, HTTPS requirement, rate limits,
   failed-authentication blocking, owner quotas, CSP, and audit events.
 - Maintainability: provider registry, English docs, bilingual UI dictionary.
+- Visual quality: Playwright desktop/mobile screenshot baselines and axe-core
+  checks run in the deployment gate and Linux CI.
 
 See `docs/adr/` for decisions that should not be rediscovered.

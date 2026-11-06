@@ -3,6 +3,8 @@ import { spawnSync } from 'node:child_process';
 const files = [
   'server.js',
   'transcription-worker.js',
+  'translation-worker.js',
+  'playwright.config.js',
   'upload-settings.js',
   'public/app.js',
   'public/i18n.js',
@@ -11,7 +13,8 @@ const files = [
   'providers/xvideos.js',
   'providers/pornhub.js',
   'providers/xnxx.js',
-  'providers/utils.js'
+  'providers/utils.js',
+  'playwright/application.visual.pw.js'
 ];
 
 for (const file of files) {

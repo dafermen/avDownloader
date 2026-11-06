@@ -47,9 +47,19 @@ the evidence.
       model download, cache reuse, cancellation/restart, and temporary PCM
       cleanup. A silent/no-audio source failed safely or produced no misleading
       ready file.
+- [ ] An imported SRT was edited for text and timing, visually reviewed across
+      the complete video, downloaded with the source base name, translated
+      locally from English to Spanish with unchanged cue order/timestamps, and
+      exported as both selectable and burned MP4 subtitles in representative
+      players.
 - [ ] A lawful adaptive video test contains synchronized video and audio.
 - [ ] A lawful HLS test selects and exports the requested quality.
 - [ ] Range download resumes correctly.
+- [ ] An interrupted YouTube task visibly reported preserved bytes and resume
+      percentage, resumed the same partial, and allowed a stopped partial to
+      be discarded explicitly without affecting another job.
+- [ ] Browser notification permission, optional sound, and ready-tab counter
+      were tested in a supported desktop browser.
 - [ ] A remote authenticated download starts from every UI location without a
       token in the URL, streams without a complete browser Blob, and resumes
       with HTTP 206 through its job-scoped HttpOnly cookie.
@@ -73,6 +83,8 @@ the evidence.
 - [ ] Storage quota, retention, cleanup, concurrency, retry, and cancellation
       behavior were checked.
 - [ ] Logs contain no secret, signed URL, internal path, or personal content.
+- [ ] The downloaded diagnostics report contains versions and bounded public
+      events but no token, signed URL, media content, or internal path.
 - [ ] Linux uses system FFmpeg and yt-dlp; no Windows executable was deployed.
 - [ ] Secrets are supplied by the service manager and file permissions are
       restrictive.

@@ -19,15 +19,19 @@ tokens, and child-process details must never appear in responses.
 | `POST /api/subtitle-jobs` | JSON with opaque caption `selectionId` and `outputFormat` (`srt` or `vtt`) | Public remote-subtitle job, HTTP 202 |
 | `POST /api/subtitle-upload-jobs` | Binary local video, validated range, subtitle format, and bounded track ordinal | Public local-subtitle job, HTTP 202 |
 | `POST /api/transcription-jobs` | Binary local video, validated range, subtitle format, language, and model profile | Public generated-subtitle job, HTTP 202 |
+| `POST /api/subtitle-translate` | Bounded English cue-text JSON and fixed English-to-Spanish headers | Same number of locally translated Spanish cue texts |
+| `POST /api/subtitle-compose-jobs` | Exact SRT prefix plus binary local video, exact byte counts, and selectable/burned mode | Public H.264/AAC MP4 job, HTTP 202 |
 | `POST /api/identity-tracks` | Normalized sampled face boxes | Single-use opaque tracking ID |
 | `GET /api/jobs` | None | `{ jobs, stats }` |
 | `GET /api/jobs/:id` | UUID path | Public job |
 | `DELETE /api/jobs/:id` | UUID path | Cancelled job or deletion result |
+| `DELETE /api/jobs/:id/partial` | UUID path plus explicit partial-control header | Terminal YouTube job with its resumable staging removed |
 | `POST /api/jobs/:id/restart` | Administration headers | Restarted job, HTTP 202 |
 | `POST /api/jobs/:id/download-access` | `x-vdownloader-download: 1` plus normal bearer authorization | HTTP 201, unchanged download path, expiry, and a job-scoped HttpOnly cookie |
 | `GET /api/jobs/:id/download` | Optional HTTP Range | Completed video, audio, or subtitle bytes with the profile's content type |
 | `GET /api/media/:id` | Opaque media UUID | Proxied media or rewritten HLS |
 | `GET /api/health` | None | Dependency, queue, storage, and feature status |
+| `GET /api/diagnostics` | Explicit diagnostics-control header | Downloadable sanitized JSON support artifact |
 | `POST /api/admin/jobs/restart` | Admin headers and `{ "ids": ["uuid"] }` | Bulk restart result, HTTP 202 |
 | `POST /api/admin/jobs/cleanup` | Admin headers and `{ "scope": "expired" }` | Removed count and reclaimed known bytes |
 | `GET /api/admin/audit` | Admin headers | Bounded current-process administrative events |
@@ -40,6 +44,10 @@ tokens, and child-process details must never appear in responses.
   "status": "queued",
   "progress": 0,
   "stage": "queued",
+  "partialBytes": 0,
+  "partialPercent": null,
+  "resumeAvailable": false,
+  "resumedFromBytes": 0,
   "filename": "video-1080p.mp4",
   "provider": "youtube",
   "mediaKind": "video",
@@ -48,6 +56,8 @@ tokens, and child-process details must never appear in responses.
   "audioCodec": null,
   "subtitleGenerated": false,
   "transcriptionModelProfile": null,
+  "subtitleComposeMode": null,
+  "subtitleCueCount": null,
   "quality": "1080p",
   "size": null,
   "error": null,
@@ -87,6 +97,13 @@ process output, or internal paths.
   `x-vdownloader-subtitle: 1`
 - Local speech-to-text: the two local subtitle headers plus
   `x-vdownloader-transcription: 1`
+- Local English-to-Spanish cue translation: `x-vdownloader-subtitle: 1` and
+  `x-vdownloader-translation: 1`
+- Local subtitle composition: normal upload and subtitle headers plus
+  `x-vdownloader-subtitle-compose: 1`, `x-upload-size`, `x-subtitle-size`, and
+  `x-subtitle-mode: selectable | burned`
+- Terminal YouTube partial cleanup: `x-vdownloader-partial: 1`
+- Diagnostic export: `x-vdownloader-diagnostics: 1`
 - Identity tracking: `x-vdownloader-identity: 1`
 - Download grant: `x-vdownloader-download: 1`
 - Restart: `x-vdownloader-admin: 1`
@@ -148,6 +165,19 @@ cache path, temporary PCM path, and process arguments never appear in JSON.
 For subtitle jobs, `filename` preserves the safe source-title base and replaces
 the source extension with `.srt` or `.vtt`. Download responses include an ASCII
 fallback and an RFC 5987 UTF-8 filename so spaces and supported accents survive.
+
+The SRT workshop limits input to 5 MiB, 2,000 ordered non-empty cues, canonical
+timestamps, and 4,000 characters per cue. Translation accepts only English to
+Spanish and always selects the fixed local Opus-MT model. Composition streams
+the exact SRT bytes first and video bytes second without buffering the media;
+the server produces only H.264/AAC MP4 with selectable `mov_text` or a burned
+subtitle filter. The UUID-owned SRT filename and model/cache paths are never
+public job fields.
+
+YouTube public jobs may report `partialBytes`, `partialPercent`,
+`resumeAvailable`, and `resumedFromBytes`. These are numeric progress facts,
+not paths or provider identifiers. Partial deletion is owner-scoped and allowed
+only for `error` or `cancelled` YouTube jobs.
 
 Remote API calls use `Authorization: Bearer <access-token>`. Tokens are defined
 in `ACCESS_TOKENS_JSON`, never accepted in query strings, and never returned by

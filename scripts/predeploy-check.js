@@ -21,6 +21,7 @@ function runNpm(argumentsList) {
 }
 const checks = [
   ['Acceptance tests', 'test:acceptance'],
+  ['Visual and accessibility regression tests', 'test:visual'],
   ['Unit tests', 'test:unit'],
   ['Property and invariant tests', 'test:property'],
   ['Mutation testing', 'test:mutation'],

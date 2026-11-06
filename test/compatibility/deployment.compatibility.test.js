@@ -33,6 +33,7 @@ test('Linux deployment uses system multimedia tools and the deployment gate', as
   assert.match(workflow, /apt-get install --yes ffmpeg/);
   assert.match(workflow, /yt-dlp/);
   assert.match(workflow, /npm run verify:deploy/);
+  assert.match(workflow, /playwright install --with-deps chromium/);
   assert.match(workflow, /actions\/checkout@[0-9a-f]{40} # v\d/);
   assert.match(workflow, /actions\/setup-node@[0-9a-f]{40} # v\d/);
   assert.doesNotMatch(workflow, /\.exe\b/i);

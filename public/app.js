@@ -5,7 +5,7 @@ import {
   initializeI18n,
   localizeBackendLabel,
   t
-} from '/i18n.js?v=15';
+} from '/i18n.js?v=16';
 
 initializeI18n();
 
@@ -27,6 +27,10 @@ const historyElement = document.querySelector('#history');
 const historyList = document.querySelector('#history-list');
 const clearHistoryButton = document.querySelector('#clear-history');
 const downloadsPanel = document.querySelector('#downloads-panel');
+const readyCounter = document.querySelector('#ready-counter');
+const notificationEnabledControl = document.querySelector('#notification-enabled');
+const notificationSoundControl = document.querySelector('#notification-sound');
+const downloadDiagnosticsButton = document.querySelector('#download-diagnostics');
 const panelConfig = document.querySelector('#panel-config');
 const dependencyHealth = document.querySelector('#dependency-health');
 const adminTokenInput = document.querySelector('#admin-token');
@@ -115,6 +119,7 @@ const subtitleLocalMeta = document.querySelector('#subtitle-local-meta');
 const subtitleClipMount = document.querySelector('#subtitle-clip-mount');
 const subtitleModeExisting = document.querySelector('#subtitle-mode-existing');
 const subtitleModeGenerate = document.querySelector('#subtitle-mode-generate');
+const subtitleModeCompose = document.querySelector('#subtitle-mode-compose');
 const subtitleLocalTrackField = document.querySelector('#subtitle-local-track-field');
 const subtitleLocalTrack = document.querySelector('#subtitle-local-track');
 const subtitleLocalFormat = document.querySelector('#subtitle-local-format');
@@ -125,6 +130,15 @@ const subtitleLocalHint = document.querySelector('#subtitle-local-hint');
 const subtitleLocalSummary = document.querySelector('#subtitle-local-summary');
 const subtitleLocalSummaryText = document.querySelector('#subtitle-local-summary-text');
 const subtitleLocalExport = document.querySelector('#subtitle-local-export');
+const subtitleWorkshop = document.querySelector('#subtitle-workshop');
+const subtitleCaptionFile = document.querySelector('#subtitle-caption-file');
+const subtitleAddCue = document.querySelector('#subtitle-add-cue');
+const subtitleTranslate = document.querySelector('#subtitle-translate');
+const subtitlePreviewToggle = document.querySelector('#subtitle-preview-toggle');
+const subtitleCueList = document.querySelector('#subtitle-cue-list');
+const subtitleDownloadSrt = document.querySelector('#subtitle-download-srt');
+const subtitleComposeSelectable = document.querySelector('#subtitle-compose-selectable');
+const subtitleComposeBurned = document.querySelector('#subtitle-compose-burned');
 const subtitleMessage = document.querySelector('#subtitle-message');
 const subtitleJobsArea = document.querySelector('#subtitle-jobs-area');
 const identityCard = document.querySelector('#identity-card');
@@ -165,7 +179,8 @@ const PROVIDER_NAMES = {
   upload: t('provider.upload'),
   audio: t('provider.audio'),
   subtitle: t('provider.subtitle'),
-  transcription: t('provider.transcription')
+  transcription: t('provider.transcription'),
+  'subtitle-compose': t('provider.subtitleCompose')
 };
 const AUDIO_OUTPUT_PROFILES = {
   mp3: { codecs: ['mp3'], lossless: false },
@@ -207,6 +222,9 @@ let subtitleRemoteVideoTitle = '';
 let selectedSubtitleFile = null;
 let subtitleObjectUrl = null;
 let subtitleClipControls = null;
+let editableSubtitleCues = [];
+let subtitlePreviewTrackUrl = null;
+let subtitlePreviewEnabled = true;
 let identityDetector = null;
 let identityAnalysis = null;
 let identityPreviewFrame = null;
@@ -220,6 +238,9 @@ let maxUploadBytes = null;
 let maxTranscriptionMinutes = 180;
 let uploadSettingsPromise = null;
 let latestPanelJobs = [];
+let latestPanelStats = null;
+let panelJobsInitialized = false;
+const notifiedReadyJobs = new Set();
 let currentAccessRole = 'admin';
 const selectedPanelJobs = new Set();
 let rejectedAccessToken = '';
@@ -228,6 +249,13 @@ let apiRetryAt = 0;
 let downloadsPanelRefreshPromise = null;
 let subtitleMessageTimer = null;
 let guidedGoal = 'video';
+const NOTIFICATION_ENABLED_KEY = 'vdownloader-notifications-v1';
+const NOTIFICATION_SOUND_KEY = 'vdownloader-notification-sound-v1';
+
+try {
+  notificationEnabledControl.checked = localStorage.getItem(NOTIFICATION_ENABLED_KEY) === 'true';
+  notificationSoundControl.checked = localStorage.getItem(NOTIFICATION_SOUND_KEY) === 'true';
+} catch {}
 
 // El token se conserva solo durante la pestaña actual. No se escribe en el
 // historial persistente del navegador ni se incorpora a URLs.
@@ -375,6 +403,99 @@ function configureDownloadLink(link, job, errorTarget = panelMessage) {
   });
 }
 
+/** Updates the tab and compact badge without revealing filenames. */
+function updateReadyCounter(jobs) {
+  const count = jobs.filter((job) => job.status === 'ready').length;
+  readyCounter.hidden = count === 0;
+  readyCounter.textContent = String(count);
+  readyCounter.title = t('notifications.readyCount', { count });
+  document.title = count ? `(${count}) vDownloader` : 'vDownloader';
+}
+
+/** Plays a short local tone; browser autoplay rejection is intentionally ignored. */
+function playCompletionSound() {
+  if (!notificationSoundControl.checked) return;
+  try {
+    const Context = window.AudioContext || window.webkitAudioContext;
+    if (!Context) return;
+    const context = new Context();
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.frequency.value = 740;
+    gain.gain.setValueAtTime(0.0001, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.12, context.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.28);
+    oscillator.connect(gain).connect(context.destination);
+    oscillator.start();
+    oscillator.stop(context.currentTime + 0.3);
+    oscillator.addEventListener('ended', () => context.close(), { once: true });
+  } catch {}
+}
+
+/** Emits at most one completion alert per job and browser page lifetime. */
+function notifyJobReady(job) {
+  if (!job?.id || notifiedReadyJobs.has(job.id)) return;
+  notifiedReadyJobs.add(job.id);
+  if (notificationEnabledControl.checked && window.Notification?.permission === 'granted') {
+    try { new Notification(t('notifications.readyTitle'), { body: t('notifications.readyBody'), tag: `vdownloader-${job.id}` }); } catch {}
+  }
+  playCompletionSound();
+}
+
+notificationEnabledControl.addEventListener('change', async () => {
+  if (notificationEnabledControl.checked) {
+    if (!('Notification' in window)) {
+      notificationEnabledControl.checked = false;
+      panelMessage.textContent = t('notifications.unsupported');
+      panelMessage.className = 'panel-message error';
+    } else if (Notification.permission !== 'granted') {
+      const permission = await Notification.requestPermission();
+      notificationEnabledControl.checked = permission === 'granted';
+      if (permission !== 'granted') {
+        panelMessage.textContent = t('notifications.denied');
+        panelMessage.className = 'panel-message error';
+      }
+    }
+  }
+  try { localStorage.setItem(NOTIFICATION_ENABLED_KEY, String(notificationEnabledControl.checked)); } catch {}
+});
+
+notificationSoundControl.addEventListener('change', () => {
+  try { localStorage.setItem(NOTIFICATION_SOUND_KEY, String(notificationSoundControl.checked)); } catch {}
+  if (notificationSoundControl.checked) playCompletionSound();
+});
+
+downloadDiagnosticsButton.addEventListener('click', async () => {
+  downloadDiagnosticsButton.disabled = true;
+  const original = downloadDiagnosticsButton.textContent;
+  downloadDiagnosticsButton.textContent = t('diagnostics.preparing');
+  try {
+    const response = await apiFetch('/api/diagnostics', {
+      headers: { 'x-vdownloader-diagnostics': '1' }, cache: 'no-store'
+    });
+    if (!response.ok) {
+      let body = null;
+      try { body = await response.json(); } catch {}
+      throw new Error(apiError(body, 'diagnostics.failed'));
+    }
+    const blob = await response.blob();
+    const href = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = href;
+    link.download = `vdownloader-diagnostics-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(href), 1_000);
+    panelMessage.textContent = t('diagnostics.ready');
+    panelMessage.className = 'panel-message success';
+  } catch (error) {
+    panelMessage.textContent = error.message;
+    panelMessage.className = 'panel-message error';
+  } finally {
+    downloadDiagnosticsButton.disabled = false;
+    downloadDiagnosticsButton.textContent = original;
+  }
+});
+
 /** Returns the bounded wait requested by an HTTP Retry-After header. */
 function retryAfterMilliseconds(response, fallback = DEFAULT_RATE_LIMIT_RETRY_MS) {
   const rawValue = response.headers.get('retry-after');
@@ -484,11 +605,19 @@ subtitleVideoFile.addEventListener('click', () => { subtitleVideoFile.value = ''
 subtitleVideoFile.addEventListener('change', loadSelectedSubtitleMedia);
 subtitleModeExisting.addEventListener('click', () => selectLocalSubtitleMode('existing'));
 subtitleModeGenerate.addEventListener('click', () => selectLocalSubtitleMode('generate'));
+subtitleModeCompose.addEventListener('click', () => selectLocalSubtitleMode('compose'));
 subtitleLocalTrack.addEventListener('change', updateLocalSubtitleSummary);
 subtitleLocalFormat.addEventListener('change', updateLocalSubtitleSummary);
 subtitleTranscriptionLanguage.addEventListener('change', updateLocalSubtitleSummary);
 subtitleTranscriptionModel.addEventListener('change', updateLocalSubtitleSummary);
 subtitleLocalExport.addEventListener('click', exportLocalSubtitles);
+subtitleCaptionFile.addEventListener('change', importEditableSubtitleFile);
+subtitleAddCue.addEventListener('click', addEditableSubtitleCue);
+subtitleTranslate.addEventListener('click', translateEditableSubtitles);
+subtitlePreviewToggle.addEventListener('click', toggleEditableSubtitlePreview);
+subtitleDownloadSrt.addEventListener('click', downloadEditableSrt);
+subtitleComposeSelectable.addEventListener('click', () => exportSubtitleComposition('selectable'));
+subtitleComposeBurned.addEventListener('click', () => exportSubtitleComposition('burned'));
 identityEnabled.addEventListener('change', toggleIdentityProtection);
 identityAnalyzeButton.addEventListener('click', analyzeIdentityFaces);
 identityClearButton.addEventListener('click', () => clearIdentityAnalysis());
@@ -524,6 +653,7 @@ window.addEventListener('beforeunload', () => {
   if (localObjectUrl) URL.revokeObjectURL(localObjectUrl);
   for (const source of selectedAudioSources) URL.revokeObjectURL(source.objectUrl);
   if (subtitleObjectUrl) URL.revokeObjectURL(subtitleObjectUrl);
+  if (subtitlePreviewTrackUrl) URL.revokeObjectURL(subtitlePreviewTrackUrl);
 });
 updateVideoFormatUi();
 updateAudioFormatUi();
@@ -585,6 +715,49 @@ function setLoading(loading) {
     message.textContent = t('analyze.querying');
     message.className = 'message loading';
   }
+}
+
+/** Builds a preflight estimate from public metadata and current storage stats. */
+function createCreationEstimate() {
+  const element = document.createElement('div');
+  element.className = 'creation-estimate';
+  const makeMetric = (labelKey) => {
+    const wrapper = document.createElement('div');
+    const label = document.createElement('span');
+    label.textContent = t(labelKey);
+    const value = document.createElement('strong');
+    wrapper.append(label, value);
+    element.append(wrapper);
+    return value;
+  };
+  const size = makeMetric('estimate.size');
+  const time = makeMetric('estimate.time');
+  const space = makeMetric('estimate.space');
+  const warning = document.createElement('p');
+  warning.className = 'creation-warning';
+  warning.hidden = true;
+  element.append(warning);
+  const update = ({ estimatedBytes = null, duration = null, processingFactor = 0.03 } = {}) => {
+    const bytes = Number(estimatedBytes);
+    const seconds = Number(duration);
+    size.textContent = bytes > 0 ? `~${formatBytes(bytes)}` : t('estimate.unknown');
+    const networkSeconds = bytes > 0 ? bytes / (2.5 * 1024 * 1024) : 20;
+    const processingSeconds = seconds > 0 ? Math.max(10, seconds * processingFactor) : 20;
+    const totalSeconds = Math.max(10, Math.ceil(networkSeconds + processingSeconds));
+    time.textContent = totalSeconds < 60
+      ? t('estimate.seconds', { count: totalSeconds })
+      : t('estimate.minutes', { count: Math.ceil(totalSeconds / 60) });
+    const available = latestPanelStats
+      ? Math.max(0, Number(latestPanelStats.storageLimitBytes) - Number(latestPanelStats.storedBytes || 0))
+      : null;
+    space.textContent = available == null ? t('estimate.checking') : formatBytes(available);
+    const warnings = [];
+    if (seconds >= 3_600) warnings.push(t('estimate.longWarning'));
+    if (available != null && bytes > available) warnings.push(t('estimate.spaceWarning'));
+    warning.hidden = warnings.length === 0;
+    warning.textContent = warnings.join(' ');
+  };
+  return { element, update };
 }
 
 /**
@@ -689,6 +862,7 @@ function renderResult(video, { initialMode = 'video' } = {}) {
   reviewLabel.textContent = t('summary.label');
   const reviewValue = document.createElement('strong');
   selectedReview.append(reviewLabel, reviewValue);
+  const videoEstimate = createCreationEstimate();
   const startButton = document.createElement('button');
   startButton.type = 'button';
   startButton.className = 'download remote-video-start';
@@ -708,6 +882,11 @@ function renderResult(video, { initialMode = 'video' } = {}) {
     if (choice.dataset.adaptive) notes.push(t('quality.adaptive'));
     if (choice.dataset.estimatedSize) notes.push(`~${formatBytes(Number(choice.dataset.estimatedSize))}`);
     reviewValue.textContent = notes.join(' · ');
+    videoEstimate.update({
+      estimatedBytes: Number(choice.dataset.estimatedSize) || null,
+      duration: video.duration,
+      processingFactor: choice.dataset.adaptive ? 0.05 : 0.02
+    });
   };
   const numericHeight = (choice) => Number.parseInt(choice.dataset.quality, 10) || 0;
   const maximumChoice = links[0] || null;
@@ -732,7 +911,7 @@ function renderResult(video, { initialMode = 'video' } = {}) {
       prepareDownload(video, selectedQuality, jobsArea, startButton);
     }
   });
-  videoPanel.append(presetRow, list, selectedReview, startButton);
+  videoPanel.append(presetRow, list, selectedReview, videoEstimate.element, startButton);
   addMode('video', 'remote.video', videoPanel);
 
   const remoteAudio = video.provider === 'youtube' && video.audio
@@ -815,7 +994,16 @@ function createRemoteAudioControls(video, jobsArea) {
   button.className = 'download remote-audio-button';
   button.dataset.selectionId = video.audio.selectionId;
   button.textContent = t('youtube.audio.export');
-  const update = () => updateAudioProfileControls(format, codec, bitrate, hint);
+  const audioEstimate = createCreationEstimate();
+  const update = () => {
+    updateAudioProfileControls(format, codec, bitrate, hint);
+    const duration = Number(video.duration) || 0;
+    const lossless = AUDIO_OUTPUT_PROFILES[format.value]?.lossless;
+    const estimatedBytes = duration > 0
+      ? Math.round(duration * (lossless ? 1_400_000 : Number(bitrate.value || 192) * 1_000) / 8)
+      : Number(video.audio.estimatedSize) || null;
+    audioEstimate.update({ estimatedBytes, duration, processingFactor: lossless ? 0.16 : 0.08 });
+  };
   const selectPreset = (preset, outputFormat, outputCodec, outputBitrate) => {
     format.value = outputFormat;
     update();
@@ -840,6 +1028,7 @@ function createRemoteAudioControls(video, jobsArea) {
   }
   format.addEventListener('change', update);
   codec.addEventListener('change', update);
+  bitrate.addEventListener('change', update);
   button.addEventListener('click', () => {
     if (!button.classList.contains('disabled')) {
       prepareRemoteAudio(video, { button, format, codec, bitrate }, jobsArea);
@@ -850,7 +1039,7 @@ function createRemoteAudioControls(video, jobsArea) {
   const advancedSummary = document.createElement('summary');
   advancedSummary.textContent = t('preset.advanced');
   advanced.append(advancedSummary, settings, hint);
-  element.append(heading, presets, advanced, button);
+  element.append(heading, presets, advanced, audioEstimate.element, button);
   selectPreset('recommended', 'mp3', 'mp3', 192);
   return { element, button };
 }
@@ -1471,17 +1660,26 @@ function selectSubtitleSource(source) {
   setSubtitleMessage('');
 }
 
-/** Switches local subtitles between embedded-track extraction and Whisper. */
+/** Switches between extraction, Whisper generation, and the editable SRT workshop. */
 function selectLocalSubtitleMode(mode) {
-  if (!['existing', 'generate'].includes(mode)) return;
+  if (!['existing', 'generate', 'compose'].includes(mode)) return;
   subtitleLocalMode = mode;
   const generated = mode === 'generate';
-  subtitleModeExisting.classList.toggle('is-active', !generated);
+  const compose = mode === 'compose';
+  subtitleModeExisting.classList.toggle('is-active', mode === 'existing');
   subtitleModeGenerate.classList.toggle('is-active', generated);
-  subtitleModeExisting.setAttribute('aria-pressed', String(!generated));
+  subtitleModeCompose.classList.toggle('is-active', compose);
+  subtitleModeExisting.setAttribute('aria-pressed', String(mode === 'existing'));
   subtitleModeGenerate.setAttribute('aria-pressed', String(generated));
-  subtitleLocalTrackField.hidden = generated;
+  subtitleModeCompose.setAttribute('aria-pressed', String(compose));
+  subtitleLocalTrackField.hidden = generated || compose;
+  subtitleLocalFormat.closest('.subtitle-output-settings').hidden = compose;
   subtitleTranscriptionSettings.hidden = !generated;
+  subtitleWorkshop.hidden = !compose || !selectedSubtitleFile;
+  subtitleClipMount.hidden = compose;
+  subtitleLocalHint.hidden = compose;
+  subtitleLocalSummary.hidden = compose;
+  subtitleLocalExport.hidden = compose;
   subtitleVideoFile.accept = generated ? SUBTITLE_MEDIA_ACCEPT : SUBTITLE_VIDEO_ACCEPT;
   setTranslatedText(subtitleLocalPickerLabel, generated ? 'subtitle.selectMedia' : 'subtitle.selectVideo');
   subtitleLocalHint.textContent = t(generated ? 'subtitle.transcriptionHint' : 'subtitle.localHint');
@@ -1492,11 +1690,12 @@ function selectLocalSubtitleMode(mode) {
   }
   if (selectedSubtitleFile) {
     setSubtitleMessage(
-      t(generated ? 'subtitle.transcriptionReady' : 'subtitle.localReady'),
+      t(compose ? 'subtitle.composeReady' : generated ? 'subtitle.transcriptionReady' : 'subtitle.localReady'),
       'success',
       SUBTITLE_NOTICE_DISMISS_MS
     );
   }
+  if (compose) renderEditableSubtitleCues();
   updateLocalSubtitleSummary();
 }
 
@@ -1595,13 +1794,22 @@ function subtitleFileKind(file) {
 function resetLocalSubtitleSelection({ clearInput = true } = {}) {
   selectedSubtitleFile = null;
   subtitleClipControls = null;
+  editableSubtitleCues = [];
   subtitleLocalEditor.hidden = true;
+  subtitleWorkshop.hidden = true;
   subtitleLocalSummary.hidden = true;
   subtitleClipMount.replaceChildren();
+  subtitleCueList.replaceChildren();
+  subtitleCaptionFile.value = '';
   if (clearInput) subtitleVideoFile.value = '';
   if (subtitleObjectUrl) {
     URL.revokeObjectURL(subtitleObjectUrl);
     subtitleObjectUrl = null;
+  }
+  subtitleVideoPreview.querySelectorAll('track[data-editable-subtitle]').forEach((track) => track.remove());
+  if (subtitlePreviewTrackUrl) {
+    URL.revokeObjectURL(subtitlePreviewTrackUrl);
+    subtitlePreviewTrackUrl = null;
   }
   for (const preview of [subtitleVideoPreview, subtitleAudioPreview]) {
     preview.pause();
@@ -1664,8 +1872,15 @@ async function loadSelectedSubtitleMedia() {
     subtitleClipMount.replaceChildren(subtitleClipControls.element);
     subtitleClipControls.enable();
     subtitleLocalEditor.hidden = false;
+    subtitleClipMount.hidden = subtitleLocalMode === 'compose';
+    subtitleWorkshop.hidden = subtitleLocalMode !== 'compose';
+    subtitleLocalHint.hidden = subtitleLocalMode === 'compose';
+    subtitleLocalExport.hidden = subtitleLocalMode === 'compose';
+    if (subtitleLocalMode === 'compose') renderEditableSubtitleCues();
     setSubtitleMessage(
-      t(subtitleLocalMode === 'generate' ? 'subtitle.transcriptionReady' : 'subtitle.localReady'),
+      t(subtitleLocalMode === 'compose'
+        ? 'subtitle.composeReady'
+        : subtitleLocalMode === 'generate' ? 'subtitle.transcriptionReady' : 'subtitle.localReady'),
       'success',
       SUBTITLE_NOTICE_DISMISS_MS
     );
@@ -1675,8 +1890,323 @@ async function loadSelectedSubtitleMedia() {
   }
 }
 
+/** Parses one strict SRT time into seconds without evaluating arbitrary text. */
+function parseEditableSubtitleTime(value) {
+  const match = String(value || '').trim().match(/^(\d{2}):(\d{2}):(\d{2})[,.](\d{3})$/);
+  if (!match) return null;
+  const minutes = Number(match[2]);
+  const seconds = Number(match[3]);
+  if (minutes > 59 || seconds > 59) return null;
+  return Number(match[1]) * 3600 + minutes * 60 + seconds + Number(match[4]) / 1000;
+}
+
+/** Formats a finite cue time using the canonical SRT timestamp shape. */
+function formatEditableSubtitleTime(value) {
+  const milliseconds = Math.max(0, Math.round(Number(value || 0) * 1000));
+  const hours = Math.floor(milliseconds / 3_600_000);
+  const minutes = Math.floor(milliseconds % 3_600_000 / 60_000);
+  const seconds = Math.floor(milliseconds % 60_000 / 1000);
+  const remainder = milliseconds % 1000;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')},${String(remainder).padStart(3, '0')}`;
+}
+
+/** Converts imported SRT into editable cues while preserving line breaks. */
+function parseEditableSubtitleText(value) {
+  const text = String(value || '').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').trim();
+  if (!text || new TextEncoder().encode(text).byteLength > 5 * 1024 * 1024) {
+    throw new Error(t('subtitle.invalidSrt'));
+  }
+  const blocks = text.split(/\n{2,}/);
+  if (blocks.length > 2_000) throw new Error(t('subtitle.tooManyCues'));
+  return blocks.map((block) => {
+    const lines = block.split('\n');
+    const index = lines.shift()?.trim();
+    const timing = lines.shift()?.trim() || '';
+    const match = timing.match(/^(\d{2}:\d{2}:\d{2}[,.]\d{3})\s+-->\s+(\d{2}:\d{2}:\d{2}[,.]\d{3})$/);
+    const cueText = lines.join('\n').trim();
+    if (!/^\d+$/.test(index || '') || !match || !cueText) throw new Error(t('subtitle.invalidSrt'));
+    return { startText: match[1].replace('.', ','), endText: match[2].replace('.', ','), text: cueText };
+  });
+}
+
+/** Returns a normalized SRT or throws a user-facing synchronization error. */
+function serializeEditableSubtitleCues() {
+  if (!editableSubtitleCues.length) throw new Error(t('subtitle.noCues'));
+  let previousStart = -1;
+  const blocks = editableSubtitleCues.map((cue, index) => {
+    const start = parseEditableSubtitleTime(cue.startText);
+    const end = parseEditableSubtitleTime(cue.endText);
+    const text = String(cue.text || '').trim();
+    if (start == null || end == null || end <= start || start < previousStart || !text || text.length > 4_000) {
+      throw new Error(t('subtitle.invalidCue', { number: index + 1 }));
+    }
+    previousStart = start;
+    return `${index + 1}\n${formatEditableSubtitleTime(start)} --> ${formatEditableSubtitleTime(end)}\n${text}`;
+  });
+  return `${blocks.join('\n\n')}\n`;
+}
+
+/** Regenerates the browser-only WebVTT track used for visual review. */
+function refreshEditableSubtitlePreview() {
+  subtitleVideoPreview.querySelectorAll('track[data-editable-subtitle]').forEach((track) => track.remove());
+  if (subtitlePreviewTrackUrl) {
+    URL.revokeObjectURL(subtitlePreviewTrackUrl);
+    subtitlePreviewTrackUrl = null;
+  }
+  if (!subtitlePreviewEnabled || subtitleLocalMode !== 'compose' || subtitleVideoPreview.hidden) return;
+  let srt;
+  try { srt = serializeEditableSubtitleCues(); } catch { return; }
+  const vtt = `WEBVTT\n\n${srt.replace(/,(\d{3})/g, '.$1')}`;
+  subtitlePreviewTrackUrl = URL.createObjectURL(new Blob([vtt], { type: 'text/vtt' }));
+  const track = document.createElement('track');
+  track.dataset.editableSubtitle = 'true';
+  track.kind = 'subtitles';
+  track.label = t('subtitle.previewTrack');
+  track.srclang = 'es';
+  track.src = subtitlePreviewTrackUrl;
+  track.default = true;
+  track.addEventListener('load', () => {
+    if (track.track) track.track.mode = 'showing';
+  });
+  subtitleVideoPreview.append(track);
+}
+
+/** Renders structured fields so text and timing can be corrected without raw-file editing. */
+function renderEditableSubtitleCues() {
+  subtitleCueList.replaceChildren();
+  if (!editableSubtitleCues.length) {
+    const empty = document.createElement('p');
+    empty.className = 'subtitle-cue-empty';
+    empty.textContent = t('subtitle.importPrompt');
+    subtitleCueList.append(empty);
+    refreshEditableSubtitlePreview();
+    return;
+  }
+  editableSubtitleCues.forEach((cue, index) => {
+    const row = document.createElement('article');
+    row.className = 'subtitle-cue-row';
+    const heading = document.createElement('div');
+    const number = document.createElement('strong');
+    number.textContent = t('subtitle.cueNumber', { number: index + 1 });
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'secondary-action';
+    remove.textContent = t('subtitle.removeCue');
+    remove.addEventListener('click', () => {
+      editableSubtitleCues.splice(index, 1);
+      renderEditableSubtitleCues();
+    });
+    heading.append(number, remove);
+    const timing = document.createElement('div');
+    timing.className = 'subtitle-cue-times';
+    const makeTimeInput = (labelKey, property) => {
+      const label = document.createElement('label');
+      const text = document.createElement('span');
+      text.textContent = t(labelKey);
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.inputMode = 'numeric';
+      input.value = cue[property];
+      input.placeholder = '00:00:00,000';
+      input.addEventListener('change', () => {
+        cue[property] = input.value.trim().replace('.', ',');
+        input.value = cue[property];
+        refreshEditableSubtitlePreview();
+      });
+      label.append(text, input);
+      timing.append(label);
+    };
+    makeTimeInput('subtitle.cueStart', 'startText');
+    makeTimeInput('subtitle.cueEnd', 'endText');
+    const textLabel = document.createElement('label');
+    const textLabelValue = document.createElement('span');
+    textLabelValue.textContent = t('subtitle.cueText');
+    const textarea = document.createElement('textarea');
+    textarea.rows = 2;
+    textarea.maxLength = 4_000;
+    textarea.value = cue.text;
+    textarea.addEventListener('input', () => {
+      cue.text = textarea.value;
+      refreshEditableSubtitlePreview();
+    });
+    textLabel.append(textLabelValue, textarea);
+    row.append(heading, timing, textLabel);
+    subtitleCueList.append(row);
+  });
+  refreshEditableSubtitlePreview();
+}
+
+/** Imports a bounded SRT chosen explicitly by the user. */
+async function importEditableSubtitleFile() {
+  const file = subtitleCaptionFile.files?.[0];
+  if (!file) return;
+  try {
+    editableSubtitleCues = parseEditableSubtitleText(await file.text());
+    renderEditableSubtitleCues();
+    setSubtitleMessage(t('subtitle.imported', { count: editableSubtitleCues.length }), 'success', SUBTITLE_NOTICE_DISMISS_MS);
+  } catch (error) {
+    editableSubtitleCues = [];
+    renderEditableSubtitleCues();
+    setSubtitleMessage(error.message);
+  }
+}
+
+/** Adds a two-second cue at the current playback position. */
+function addEditableSubtitleCue() {
+  if (!selectedSubtitleFile || subtitleLocalMode !== 'compose') {
+    setSubtitleMessage(t('subtitle.selectBeforeCompose'));
+    return;
+  }
+  const duration = Number(subtitleLocalExport.dataset.duration) || 0;
+  const start = Math.max(0, Math.min(duration - 0.1, Number(subtitleVideoPreview.currentTime) || 0));
+  const end = Math.min(duration, start + 2);
+  editableSubtitleCues.push({
+    startText: formatEditableSubtitleTime(start),
+    endText: formatEditableSubtitleTime(Math.max(start + 0.1, end)),
+    text: t('subtitle.newCueText')
+  });
+  editableSubtitleCues.sort((left, right) => (
+    parseEditableSubtitleTime(left.startText) - parseEditableSubtitleTime(right.startText)
+  ));
+  renderEditableSubtitleCues();
+}
+
+/** Sends only cue text to the fixed local English-to-Spanish worker. */
+async function translateEditableSubtitles() {
+  try {
+    serializeEditableSubtitleCues();
+    subtitleTranslate.disabled = true;
+    subtitleTranslate.textContent = t('subtitle.translating');
+    const response = await apiFetch('/api/subtitle-translate', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-vdownloader-subtitle': '1',
+        'x-vdownloader-translation': '1'
+      },
+      body: JSON.stringify({
+        sourceLanguage: 'en',
+        targetLanguage: 'es',
+        texts: editableSubtitleCues.map((cue) => cue.text)
+      })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(apiError(data, 'subtitle.translationFailed'));
+    if (!Array.isArray(data.texts) || data.texts.length !== editableSubtitleCues.length) {
+      throw new Error(t('subtitle.translationFailed'));
+    }
+    data.texts.forEach((text, index) => { editableSubtitleCues[index].text = text; });
+    renderEditableSubtitleCues();
+    setSubtitleMessage(t('subtitle.translated'), 'success', SUBTITLE_NOTICE_DISMISS_MS);
+  } catch (error) {
+    setSubtitleMessage(error.message);
+  } finally {
+    subtitleTranslate.disabled = false;
+    subtitleTranslate.textContent = t('subtitle.translateEnEs');
+  }
+}
+
+/** Shows or hides the browser-local caption track without changing the SRT. */
+function toggleEditableSubtitlePreview() {
+  subtitlePreviewEnabled = !subtitlePreviewEnabled;
+  subtitlePreviewToggle.textContent = t(subtitlePreviewEnabled ? 'subtitle.previewHide' : 'subtitle.previewShow');
+  refreshEditableSubtitlePreview();
+}
+
+/** Downloads the current normalized SRT without contacting the server. */
+function downloadEditableSrt() {
+  try {
+    const srt = serializeEditableSubtitleCues();
+    const sourceName = selectedSubtitleFile?.name || 'subtitles';
+    const baseName = sourceName.replace(/\.[^.]+$/, '');
+    const url = URL.createObjectURL(new Blob([srt], { type: 'application/x-subrip;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${baseName}.srt`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1_000);
+    setSubtitleMessage(t('subtitle.srtDownloaded'), 'success', SUBTITLE_NOTICE_DISMISS_MS);
+  } catch (error) {
+    setSubtitleMessage(error.message);
+  }
+}
+
+/** Streams normalized SRT bytes followed by the selected video into one job. */
+function uploadSubtitleComposition(file, srt, mode, duration, onProgress) {
+  return new Promise((resolve, reject) => {
+    const subtitleBytes = new TextEncoder().encode(srt);
+    const body = new Blob([subtitleBytes, file], { type: file.type || 'application/octet-stream' });
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/subtitle-compose-jobs');
+    const accessToken = uploadAccessToken();
+    if (accessToken) xhr.setRequestHeader('authorization', `Bearer ${accessToken}`);
+    xhr.setRequestHeader('content-type', file.type || 'application/octet-stream');
+    xhr.setRequestHeader('x-vdownloader-upload', '1');
+    xhr.setRequestHeader('x-vdownloader-subtitle', '1');
+    xhr.setRequestHeader('x-vdownloader-subtitle-compose', '1');
+    xhr.setRequestHeader('x-upload-name', encodeURIComponent(file.name));
+    xhr.setRequestHeader('x-upload-size', String(file.size));
+    xhr.setRequestHeader('x-upload-duration', String(duration));
+    xhr.setRequestHeader('x-upload-start', '0');
+    xhr.setRequestHeader('x-upload-end', String(duration));
+    xhr.setRequestHeader('x-subtitle-size', String(subtitleBytes.byteLength));
+    xhr.setRequestHeader('x-subtitle-mode', mode);
+    xhr.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable) onProgress(Math.round(event.loaded / event.total * 100));
+    });
+    xhr.addEventListener('load', () => {
+      const response = (() => { try { return JSON.parse(xhr.responseText || '{}'); } catch { return {}; } })();
+      if (xhr.status >= 200 && xhr.status < 300) resolve(response);
+      else reject(new Error(apiError(response, 'subtitle.composeFailed')));
+    });
+    xhr.addEventListener('error', () => reject(new Error(t('upload.network'))));
+    xhr.addEventListener('abort', () => reject(new Error(t('upload.cancelled'))));
+    xhr.send(body);
+  });
+}
+
+/** Queues a selectable or burned MP4 after validating the complete editor. */
+async function exportSubtitleComposition(mode) {
+  if (!selectedSubtitleFile || subtitleFileKind(selectedSubtitleFile) !== 'video') {
+    setSubtitleMessage(t('subtitle.selectBeforeCompose'));
+    return;
+  }
+  const buttons = [subtitleComposeSelectable, subtitleComposeBurned];
+  try {
+    const srt = serializeEditableSubtitleCues();
+    buttons.forEach((button) => { button.disabled = true; });
+    const active = mode === 'burned' ? subtitleComposeBurned : subtitleComposeSelectable;
+    const original = active.textContent;
+    active.dataset.originalText = original;
+    const job = await uploadSubtitleComposition(
+      selectedSubtitleFile,
+      srt,
+      mode,
+      Number(subtitleLocalExport.dataset.duration),
+      (progress) => { active.textContent = t('upload.progress', { progress }); }
+    );
+    active.textContent = t('subtitle.composing');
+    setSubtitleMessage(t('upload.complete'), 'success', SUBTITLE_NOTICE_DISMISS_MS);
+    refreshDownloadsPanel();
+    await monitorJob(job, subtitleJobsArea);
+  } catch (error) {
+    renderJobError(subtitleJobsArea, error.message);
+    setSubtitleMessage(error.message);
+  } finally {
+    buttons.forEach((button) => { button.disabled = false; });
+    subtitleComposeSelectable.textContent = t('subtitle.composeSelectable');
+    subtitleComposeBurned.textContent = t('subtitle.composeBurned');
+  }
+}
+
 /** Summarizes local track extraction or speech-to-text generation. */
 function updateLocalSubtitleSummary() {
+  if (subtitleLocalMode === 'compose') {
+    subtitleLocalSummary.hidden = true;
+    return;
+  }
   const range = exportRange(subtitleLocalExport);
   if (!selectedSubtitleFile || !range || subtitleLocalExport.classList.contains('disabled')) {
     subtitleLocalSummary.hidden = true;
@@ -2929,8 +3459,11 @@ async function monitorJob(initialJob, jobsArea) {
     return node;
   });
   const detail = document.createElement('p');
+  const resumeInline = document.createElement('div');
+  resumeInline.className = 'resume-notice';
+  resumeInline.hidden = true;
   top.append(status, actions);
-  card.append(top, stageRail, progress, detail);
+  card.append(top, stageRail, progress, detail, resumeInline);
   jobsArea.replaceChildren(card);
 
   let job = initialJob;
@@ -2969,6 +3502,9 @@ async function monitorJob(initialJob, jobsArea) {
           : (['downloading', 'processing', 'finalizing'].includes(currentStage)
               ? t(`job.stage.${currentStage}Detail`)
               : formatJobEta(job)));
+    const showResume = job.resumeAvailable || job.resumedFromBytes > 0;
+    resumeInline.hidden = !showResume;
+    if (showResume) resumeInline.textContent = resumeSummary(job);
 
     if (job.status === 'ready') {
       status.textContent = t('job.ready');
@@ -3012,6 +3548,7 @@ async function monitorJob(initialJob, jobsArea) {
       readyActions.append(download, another, viewDownloads);
       card.append(readyActions);
       saveHistory(job);
+      notifyJobReady(job);
       requestAnimationFrame(() => {
         card.scrollIntoView({ behavior: 'smooth', block: 'center' });
         download.focus({ preventScroll: true });
@@ -3027,6 +3564,7 @@ async function monitorJob(initialJob, jobsArea) {
       return;
     }
     if (job.status === 'error') {
+      refreshDownloadsPanel();
       throw new Error(getLanguage() === 'es' && job.error ? job.error : t('job.prepareFailed'));
     }
     await waitFor(JOB_POLL_INTERVAL_MS);
@@ -3138,12 +3676,20 @@ async function refreshDownloadsPanelOnce() {
     const response = await apiFetch('/api/jobs', { cache: 'no-store' });
     const data = await response.json();
     if (!response.ok) return;
+    if (panelJobsInitialized) {
+      for (const job of data.jobs) if (job.status === 'ready') notifyJobReady(job);
+    } else {
+      for (const job of data.jobs) if (job.status === 'ready') notifiedReadyJobs.add(job.id);
+      panelJobsInitialized = true;
+    }
     latestPanelJobs = data.jobs;
+    latestPanelStats = data.stats;
     const knownIds = new Set(data.jobs.map((job) => job.id));
     for (const id of selectedPanelJobs) if (!knownIds.has(id)) selectedPanelJobs.delete(id);
     adminRestartSelected.disabled = currentAccessRole !== 'admin' || selectedPanelJobs.size === 0;
     renderPanelStats(data.stats);
     renderPanelJobs(latestPanelJobs);
+    updateReadyCounter(latestPanelJobs);
     downloadsPanel.hidden = false;
   } catch {}
 }
@@ -3352,6 +3898,56 @@ async function requestJobRestart(job, control) {
   }
 }
 
+/** Returns a transparent summary of the bytes that yt-dlp can continue. */
+function resumeSummary(job) {
+  const size = formatBytes(job.resumedFromBytes || job.partialBytes || 0);
+  const percent = Number(job.partialPercent);
+  if (job.resumedFromBytes > 0 && ['queued', 'retrying', 'processing'].includes(job.status)) {
+    return Number.isFinite(percent) && percent > 0
+      ? t('resume.resumingPercent', { percent, size })
+      : t('resume.resuming', { size });
+  }
+  return t('resume.preserved', { size });
+}
+
+/** Discards only the selected job's server-owned YouTube staging prefix. */
+async function discardJobPartial(job, control) {
+  if (!window.confirm(t('resume.discardConfirm'))) return;
+  control.disabled = true;
+  try {
+    const response = await apiFetch(`/api/jobs/${job.id}/partial`, {
+      method: 'DELETE', headers: { 'x-vdownloader-partial': '1' }
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(apiError(body, 'resume.discardFailed'));
+    panelMessage.textContent = t('resume.discarded');
+    panelMessage.className = 'panel-message success';
+    await refreshDownloadsPanel();
+  } catch (error) {
+    panelMessage.textContent = error.message;
+    panelMessage.className = 'panel-message error';
+    control.disabled = false;
+  }
+}
+
+/** Creates the partial-download notice and optional terminal cleanup action. */
+function createResumeNotice(job) {
+  if (!job.resumeAvailable && !job.resumedFromBytes) return null;
+  const notice = document.createElement('div');
+  notice.className = 'resume-notice';
+  const text = document.createElement('span');
+  text.textContent = resumeSummary(job);
+  notice.append(text);
+  if (job.resumeAvailable && ['error', 'cancelled'].includes(job.status)) {
+    const discard = document.createElement('button');
+    discard.type = 'button';
+    discard.textContent = t('resume.discard');
+    discard.addEventListener('click', () => discardJobPartial(job, discard));
+    notice.append(discard);
+  }
+  return notice;
+}
+
 /** Crea filas del panel y conecta acciones cancelar/descargar/eliminar. */
 function renderPanelJobs(jobs) {
   const visibleJobs = filteredPanelJobs(jobs);
@@ -3384,7 +3980,9 @@ function renderPanelJobs(jobs) {
     const meta = document.createElement('span');
     const statusText = {
       queued: t('status.queued'), processing: `${job.progress}% · ${formatJobEta(job).replace(/\.$/, '')}`,
-      retrying: ['upload', 'audio'].includes(job.provider)
+      retrying: job.resumedFromBytes > 0
+        ? resumeSummary(job)
+        : ['upload', 'audio'].includes(job.provider)
         ? t('status.checkingSource')
         : t('status.refreshing', { attempt: job.attempts, total: job.maxRetries + 1 }),
       restarting: t('status.restarting'),
@@ -3399,6 +3997,8 @@ function renderPanelJobs(jobs) {
     bar.style.width = `${job.status === 'ready' ? 100 : job.progress || 0}%`;
     progress.append(bar);
     info.append(name, meta, progress);
+    const resumeNotice = createResumeNotice(job);
+    if (resumeNotice) info.append(resumeNotice);
     if (job.events?.length) {
       const history = document.createElement('details');
       history.className = 'job-events';

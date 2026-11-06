@@ -10,6 +10,15 @@ test('the primary user journey is present in both interface languages', async ()
     readFile(new URL('../../public/docs.html', import.meta.url), 'utf8')
   ]);
 
+  const visibleKeys = new Set([
+    ...[...html.matchAll(/data-i18n(?:-placeholder|-aria)?="([^"]+)"/g)].map((match) => match[1]),
+    ...[...app.matchAll(/\bt\('([^']+)'/g)].map((match) => match[1])
+  ]);
+  for (const key of visibleKeys) {
+    assert.equal(hasTranslation(key, 'es'), true, `Missing Spanish visible key: ${key}`);
+    assert.equal(hasTranslation(key, 'en'), true, `Missing English visible key: ${key}`);
+  }
+
   for (const key of [
     'search.action',
     'guided.title',
@@ -45,6 +54,10 @@ test('the primary user journey is present in both interface languages', async ()
     'summary.template',
     'subtitle.export',
     'subtitle.modeGenerate',
+    'subtitle.modeCompose',
+    'subtitle.composeSelectable',
+    'subtitle.composeBurned',
+    'subtitle.translateEnEs',
     'subtitle.selectMedia',
     'subtitle.videoRequired',
     'subtitle.unsupportedMedia',
@@ -54,6 +67,10 @@ test('the primary user journey is present in both interface languages', async ()
     'audio.codec',
     'video.videoCodec',
     'downloads.title',
+    'notifications.desktop',
+    'diagnostics.download',
+    'resume.preserved',
+    'estimate.size',
     'nav.docs'
   ]) {
     assert.equal(hasTranslation(key, 'es'), true, `Missing Spanish acceptance key: ${key}`);
@@ -75,6 +92,9 @@ test('the primary user journey is present in both interface languages', async ()
   assert.match(app, /\/api\/subtitle-jobs/);
   assert.match(app, /\/api\/subtitle-upload-jobs/);
   assert.match(app, /\/api\/transcription-jobs/);
+  assert.match(app, /\/api\/subtitle-compose-jobs/);
+  assert.match(app, /\/api\/subtitle-translate/);
+  assert.match(app, /\/api\/diagnostics/);
   assert.match(html, /id="local-audio-file"/);
   assert.match(html, /id="local-tool-video"[^>]+data-local-tool="video"/);
   assert.match(html, /id="local-tool-extract"[^>]+data-local-tool="extract"/);
@@ -88,6 +108,12 @@ test('the primary user journey is present in both interface languages', async ()
   assert.match(html, /id="subtitle-video-file"[^>]+accept="[^"]*\.mp4/);
   assert.match(html, /id="subtitle-audio-preview"/);
   assert.match(html, /id="subtitle-mode-generate"/);
+  assert.match(html, /id="subtitle-mode-compose"/);
+  assert.match(html, /id="subtitle-cue-list"/);
+  assert.match(html, /id="subtitle-compose-selectable"/);
+  assert.match(html, /id="subtitle-compose-burned"/);
+  assert.match(html, /id="notification-enabled"/);
+  assert.match(html, /id="download-diagnostics"/);
   assert.ok(
     html.indexOf('id="subtitle-mode-generate"') < html.indexOf('id="subtitle-video-file"'),
     'The generation method must be chosen before the local media picker'

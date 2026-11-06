@@ -48,6 +48,9 @@ administrator token is exposed.
   track to SRT or WebVTT, plus local Whisper speech-to-text generation from
   MP4/M4V/MOV/WebM video or MP3/M4A/AAC/WAV/FLAC/OGG/Opus audio. Source audio
   is not sent to a cloud transcription API.
+- Structured SRT workshop with editable text and timestamps, browser-local
+  preview, fixed-model local English-to-Spanish translation, edited SRT
+  download, and MP4 output with selectable or permanently visible subtitles.
 - Four explicit workflows—**Create a video**, **Extract audio from a video**,
   **Edit audio files**, and **Export subtitles**—with a four-step guide and an output summary
   before processing. Each workflow shows only its relevant controls.
@@ -65,7 +68,8 @@ administrator token is exposed.
 - Persistence and recovery after restart.
 - Resumable YouTube staging: a failed network attempt keeps its UUID-owned
   yt-dlp partial file for a safe retry or administrative restart; quota and
-  expiration cleanup include those bytes.
+  expiration cleanup include those bytes. The panel shows preserved bytes and
+  resume percentage and lets the owner explicitly discard a stopped partial.
 - Resumable downloads through HTTP ranges.
 - Authenticated remote downloads stream directly to disk through a temporary,
   job-scoped HttpOnly grant; native access tokens never enter download URLs and
@@ -84,6 +88,14 @@ administrator token is exposed.
   FFmpeg processing, avoiding provider-bound signed URLs that reject direct
   FFmpeg access with HTTP 403.
 - Operational diagnostics for FFmpeg, yt-dlp, queue, and storage.
+- Preflight final-size, processing-time, and available-space estimates with a
+  long-job warning before the task is created.
+- Optional browser notifications and completion sound, plus a ready-job count
+  in the page tab.
+- Downloadable secret-free support diagnostics containing public versions,
+  queue/storage state, bounded job events, and FFmpeg/yt-dlp availability.
+- Playwright visual regression and basic accessibility coverage for desktop,
+  mobile, Spanish, English, video, audio, and subtitle entry points.
 - JSON logs suitable for `journald` and configurable retention.
 - Opaque references: signed URLs are never sent to the browser or persisted.
 - System-managed multimedia tools on Linux.
@@ -152,6 +164,14 @@ To run tests:
 
 ```bash
 npm test
+```
+
+Install the Playwright browser once and run visual/accessibility regression
+tests separately while developing interface changes:
+
+```bash
+npx playwright install chromium
+npm run test:visual
 ```
 
 Before any release or deployment, run the complete quality gate:
@@ -303,15 +323,19 @@ LICENSE          MIT license for project-owned code
 - `POST /api/subtitle-jobs`: creates SRT/WebVTT from an opaque YouTube caption selection.
 - `POST /api/subtitle-upload-jobs`: receives a local video and extracts one bounded embedded subtitle track.
 - `POST /api/transcription-jobs`: receives an allowlisted local video or audio file and generates SRT/WebVTT from its selected range with local Whisper inference.
+- `POST /api/subtitle-translate`: translates a bounded array of English cue text to Spanish with the fixed local Opus-MT worker; requires subtitle and translation control headers.
+- `POST /api/subtitle-compose-jobs`: streams a validated SRT prefix plus one local video and creates an MP4 with selectable or burned subtitles.
 - `POST /api/identity-tracks`: validates face tracking and returns a single-use UUID reference.
 - `GET /api/jobs`: lists jobs and statistics.
 - `GET /api/jobs/:id`: retrieves a job.
+- `DELETE /api/jobs/:id/partial`: explicitly discards a terminal YouTube job's resumable staging bytes.
 - `DELETE /api/jobs/:id`: cancels or deletes a job.
 - `POST /api/jobs/:id/restart`: administratively restarts a job and responds with HTTP 202.
 - `POST /api/jobs/:id/download-access`: creates a short-lived, job-scoped HttpOnly download grant after bearer authentication.
 - `GET /api/jobs/:id/download`: downloads the completed video, audio, or subtitle file with HTTP range support.
 - `GET /api/media/:id`: opaque proxy for previews, manifests, and segments.
 - `GET /api/health`: status, versions, queue, retention, and dependencies.
+- `GET /api/diagnostics`: downloads a bounded secret-free JSON support report when the explicit diagnostics header is present.
 
 ## Trim a local file
 
@@ -364,8 +388,21 @@ Select **Export subtitles**, then choose one source and method:
    **Generate from audio or video** and select a supported video or an MP3,
    M4A, AAC, WAV, FLAC, OGG, or Opus audio file, then choose the spoken
    language and Whisper accuracy profile.
-3. Select the desired range and SRT or WebVTT, then export or generate.
-4. Success notices clear after eight seconds. Once a subtitle download starts,
+3. To revise existing SRT captions or add them manually, choose **Edit and
+   embed subtitles**, select a local video, and import an SRT. Each cue exposes
+   editable start, end, and text fields. The preview track can be shown or
+   hidden while reviewing synchronization.
+4. The workshop can translate English cue text to Spanish with the fixed local
+   `Xenova/opus-mt-en-es` model. Only cue text enters the isolated local worker;
+   cue order and timestamps remain unchanged. The first use may download model
+   artifacts into the same ignored model cache used by transcription.
+5. Download the edited SRT, create an MP4 with a selectable `mov_text` track,
+   or burn the subtitles permanently into the image. Composition accepts the
+   complete video and a validated SRT only; it never accepts client FFmpeg
+   arguments or paths.
+6. For extraction or generation, select the desired range and SRT or WebVTT,
+   then export or generate.
+7. Success notices clear after eight seconds. Once a subtitle download starts,
    its inline result clears while the persistent Download Center job remains
    available for another download until normal expiration or manual removal.
 
@@ -374,7 +411,7 @@ Subtitle downloads keep the source media base name: for example,
 becomes `Interview.srt`. Choosing WebVTT uses the same base name with `.vtt`.
 Unsafe path/control characters are replaced while spaces, case, and supported
 accents are preserved.
-4. The result uses the same persistent queue, owner isolation, restart,
+The result uses the same persistent queue, owner isolation, restart,
    expiration, quota, authenticated download, and cleanup behavior as media jobs.
 
 Speech-to-text runs in an isolated Node worker through Transformers.js and
@@ -504,6 +541,9 @@ The full policy and category commands are in
 | `ffmpeg-static` 5.2.0 | GPL-3.0-or-later |
 | HLS.js 1.6.13 | Apache-2.0 |
 | `@mediapipe/tasks-vision` 0.10.35 and BlazeFace | Apache-2.0 |
+| `@huggingface/transformers` 4.3.1 and allowlisted local models | Apache-2.0 |
+| `@playwright/test` 1.65.0 | Apache-2.0 |
+| `@axe-core/playwright` 4.14.0 | MPL-2.0 |
 | `youtube-dl-exec` 3.0.22 | MIT |
 | yt-dlp | Unlicense; its artifacts may include components under other licenses |
 

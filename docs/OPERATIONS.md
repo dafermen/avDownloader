@@ -7,6 +7,12 @@ retention, storage, and feature configuration. A missing required dependency
 returns a degraded response. Logs are one JSON object per line and are suitable
 for `journald`.
 
+The Download Center's **Export diagnostics** action calls
+`GET /api/diagnostics` with an explicit control header and downloads a bounded
+JSON report. It is intended for support attachments: verify it contains no
+secret, URL, path, media content, or subtitle text before sharing. Recent
+events live only in a bounded in-memory ring and reset with the process.
+
 ## Routine checks
 
 - Exactly one application process owns port 5177.
@@ -31,6 +37,15 @@ for `journald`.
 - Generated subtitle jobs report provider `transcription`. Monitor the first
   model download, cache size, CPU/RAM use, and temporary PCM space. Audio is
   local; only public model artifacts are fetched from Hugging Face.
+- Subtitle-composition jobs report provider `subtitle-compose` and retain one
+  UUID-owned video plus a private normalized SRT. Both count toward quota and
+  must survive restart or be removed together. Local translation is serialized
+  to one fixed English-to-Spanish worker; monitor its first model download,
+  model-cache size, CPU, and RAM.
+- Failed YouTube jobs can retain resumable staging bytes. The panel reports
+  their safe size/percentage. Verify successful continuation or use the
+  terminal **Discard partial** action; expiration and job deletion also remove
+  the complete UUID staging prefix.
 - When Nginx is used, Node remains on loopback and forwarded addresses in logs
   match the actual remote client rather than the proxy or a supplied spoof.
 

@@ -571,6 +571,58 @@ test('an embedded local subtitle track can be exported as SRT', { timeout: 60_00
   }
 });
 
+test('an edited SRT can become selectable or burned subtitles in MP4', { timeout: 90_000 }, async () => {
+  const application = await startIsolatedApplication();
+  const fixtureDirectory = await mkdtemp(join(tmpdir(), 'vdownloader-subtitle-compose-e2e-'));
+  try {
+    const source = await createSyntheticVideo(fixtureDirectory);
+    const subtitle = Buffer.from('1\n00:00:00,100 --> 00:00:01,700\nEdited subtitle fixture\n', 'utf8');
+    for (const mode of ['selectable', 'burned']) {
+      const body = Buffer.concat([subtitle, source.bytes]);
+      const upload = await fetch(`${application.baseUrl}/api/subtitle-compose-jobs`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'video/mp4',
+          'content-length': String(body.length),
+          'x-vdownloader-upload': '1',
+          'x-vdownloader-subtitle': '1',
+          'x-vdownloader-subtitle-compose': '1',
+          'x-upload-name': encodeURIComponent('Edited training.mp4'),
+          'x-upload-size': String(source.bytes.length),
+          'x-upload-duration': '2',
+          'x-upload-start': '0',
+          'x-upload-end': '2',
+          'x-subtitle-size': String(subtitle.length),
+          'x-subtitle-mode': mode
+        },
+        body
+      });
+      const created = await upload.json();
+      assert.equal(upload.status, 202, JSON.stringify(created));
+      assert.equal(created.provider, 'subtitle-compose');
+      assert.equal(created.subtitleComposeMode, mode);
+      assert.equal(created.subtitleCueCount, 1);
+      assert.equal(created.filename, 'Edited training-subtitulado.mp4');
+      assert.equal(Object.hasOwn(created, 'subtitleSourceFilename'), false);
+
+      let job = created;
+      const deadline = Date.now() + 40_000;
+      while (!['ready', 'error', 'cancelled'].includes(job.status) && Date.now() < deadline) {
+        await new Promise((resolveWait) => setTimeout(resolveWait, 150));
+        job = await (await fetch(`${application.baseUrl}/api/jobs/${created.id}`)).json();
+      }
+      assert.equal(job.status, 'ready', `${mode}: ${job.error || 'Timed out'}\n${application.logs()}`);
+      const download = await fetch(`${application.baseUrl}/api/jobs/${created.id}/download`);
+      assert.equal(download.status, 200);
+      assert.match(download.headers.get('content-type') || '', /^video\/mp4/);
+      assert.ok((await download.arrayBuffer()).byteLength > 2_000);
+    }
+  } finally {
+    await application.close();
+    await rm(fixtureDirectory, { recursive: true, force: true });
+  }
+});
+
 test('local video audio can generate persisted SRT subtitles', { timeout: 60_000 }, async () => {
   const application = await startIsolatedApplication({
     env: {

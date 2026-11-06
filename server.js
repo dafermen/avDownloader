@@ -50,6 +50,9 @@ const TRANSCRIPTION_CACHE_DIR = resolve(process.env.TRANSCRIPTION_CACHE_DIR || j
 const TRANSCRIPTION_ALLOW_MODEL_DOWNLOAD = !/^false$/i.test(process.env.TRANSCRIPTION_ALLOW_MODEL_DOWNLOAD || '');
 const TRANSCRIPTION_WORKER_PATH = resolve(process.env.TRANSCRIPTION_WORKER_PATH
   || fileURLToPath(new URL('./transcription-worker.js', import.meta.url)));
+const TRANSLATION_WORKER_PATH = resolve(fileURLToPath(new URL('./translation-worker.js', import.meta.url)));
+const MAX_SUBTITLE_TEXT_BYTES = 5 * 1024 * 1024;
+const MAX_SUBTITLE_TRANSLATION_BODY_BYTES = 512 * 1024;
 const configuredTtlMinutes = Number(process.env.JOB_TTL_MINUTES);
 const JOB_TTL_MINUTES = Number.isFinite(configuredTtlMinutes) && configuredTtlMinutes >= 5
   ? Math.min(10_080, Math.floor(configuredTtlMinutes))
@@ -90,6 +93,7 @@ const identityTracks = new Map();
 const requestRates = new Map();
 const authenticationFailures = new Map();
 const administrativeAudit = [];
+const operationalEvents = [];
 const downloadGrants = new Map();
 const SELECTION_TTL_MS = 15 * 60 * 1000;
 const SUBTITLE_SELECTION_TTL_MS = 15 * 60 * 1000;
@@ -101,6 +105,7 @@ const IDENTITY_TRACK_TTL_MS = 30 * 60 * 1000;
 const DOWNLOAD_GRANT_TTL_MS = 30 * 60 * 1000;
 const MAX_DOWNLOAD_GRANTS = 1_000;
 let activeJobs = 0;
+let translationActive = false;
 let persistTimer = null;
 const SERVICE_STARTED_AT = Date.now();
 let dependencyStatus = null;
@@ -122,9 +127,19 @@ const MIME_TYPES = {
 
 /** Escribe una línea JSON fácil de consultar con journald o cualquier agregador. */
 function logEvent(level, event, details = {}) {
-  const record = JSON.stringify({ timestamp: new Date().toISOString(), level, event, ...details });
+  const timestamp = new Date().toISOString();
+  const record = JSON.stringify({ timestamp, level, event, ...details });
   const writer = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
   writer(record);
+  const message = typeof details.message === 'string'
+    ? details.message
+      .replace(/https?:\/\/\S+/gi, '[url]')
+      .replace(/[A-Za-z]:\\[^\s"']+/g, '[path]')
+      .replace(/\/(?:opt|var|home|tmp)\/[^\s"']+/g, '[path]')
+      .slice(0, 240)
+    : null;
+  operationalEvents.push({ timestamp, level, event, ...(message ? { message } : {}) });
+  if (operationalEvents.length > 100) operationalEvents.splice(0, operationalEvents.length - 100);
 }
 
 /** Ejecuta una herramienta local y obtiene la primera línea de su versión. */
@@ -349,6 +364,90 @@ function normalizeSubtitleOutput(formatValue) {
   const output = SUBTITLE_OUTPUTS.get(outputFormat);
   if (!output) throw httpError('Selecciona un formato de subtítulos SRT o WebVTT.');
   return { outputFormat, output };
+}
+
+/** Converts one strict SRT timestamp to seconds for ordering validation. */
+function srtTimestampSeconds(value) {
+  const match = String(value || '').match(/^(\d{2}):(\d{2}):(\d{2}),(\d{3})$/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const seconds = Number(match[3]);
+  const milliseconds = Number(match[4]);
+  if (minutes > 59 || seconds > 59) return null;
+  return hours * 3600 + minutes * 60 + seconds + milliseconds / 1000;
+}
+
+/**
+ * Validates and normalizes an editable SRT without accepting ASS/FFmpeg
+ * directives. Cue count, total text, timestamps, and ordering are bounded so
+ * the same safe representation can be translated, previewed, or composed.
+ */
+export function normalizeEditableSrt(value) {
+  const text = String(value || '').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').trim();
+  if (!text || Buffer.byteLength(text, 'utf8') > MAX_SUBTITLE_TEXT_BYTES || text.includes('\uFFFD')) {
+    throw httpError('El archivo SRT está vacío, dañado o supera 5 MB.');
+  }
+  const blocks = text.split(/\n{2,}/);
+  if (blocks.length < 1 || blocks.length > 2_000) throw httpError('El SRT debe contener entre 1 y 2000 fragmentos.');
+  let previousStart = -1;
+  const cues = blocks.map((block, index) => {
+    const lines = block.split('\n');
+    const declaredIndex = lines.shift()?.trim();
+    const timing = lines.shift()?.trim() || '';
+    const timingMatch = timing.match(/^(\d{2}:\d{2}:\d{2},\d{3})\s+-->\s+(\d{2}:\d{2}:\d{2},\d{3})$/);
+    const cueText = lines.join('\n').trim();
+    const start = timingMatch ? srtTimestampSeconds(timingMatch[1]) : null;
+    const end = timingMatch ? srtTimestampSeconds(timingMatch[2]) : null;
+    if (!/^\d+$/.test(declaredIndex || '') || start == null || end == null || end <= start
+      || start < previousStart || !cueText || cueText.length > 4_000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(cueText)) {
+      throw httpError(`El fragmento ${index + 1} del SRT no es válido.`);
+    }
+    previousStart = start;
+    return { index: index + 1, start, end, startText: timingMatch[1], endText: timingMatch[2], text: cueText };
+  });
+  const normalized = `${cues.map((cue) => (
+    `${cue.index}\n${cue.startText} --> ${cue.endText}\n${cue.text}`
+  )).join('\n\n')}\n`;
+  return { text: normalized, cues };
+}
+
+/** Validates the fixed MP4 subtitle-composition profile. */
+export function normalizeSubtitleCompositionMetadata(input) {
+  const source = normalizeUploadMetadata({
+    ...input,
+    contentLength: input.mediaLength,
+    outputFormat: 'mp4',
+    videoCodec: 'h264',
+    audioCodec: 'aac'
+  });
+  const subtitleBytes = Number(input.subtitleBytes);
+  const totalBytes = Number(input.totalBytes);
+  if (!Number.isSafeInteger(subtitleBytes) || subtitleBytes < 20 || subtitleBytes > MAX_SUBTITLE_TEXT_BYTES) {
+    throw httpError('El archivo SRT debe tener entre 20 bytes y 5 MB.');
+  }
+  if (!Number.isSafeInteger(totalBytes) || totalBytes !== source.contentLength + subtitleBytes) {
+    throw httpError('El tamaño combinado del video y el SRT no coincide con lo declarado.');
+  }
+  const mode = String(input.mode || '').trim().toLowerCase();
+  if (!new Set(['selectable', 'burned']).has(mode)) {
+    throw httpError('Selecciona subtítulos seleccionables o visibles permanentemente.');
+  }
+  if (source.clip.start > 0.01 || Math.abs(source.clip.end - source.duration) > 0.25) {
+    throw httpError('La incrustación usa el video completo; ajusta los tiempos del SRT en el editor.');
+  }
+  return {
+    ...source,
+    subtitleBytes,
+    totalBytes,
+    mode,
+    estimatedSize: Math.max(1, Math.ceil(source.contentLength * 1.2)),
+    outputFormat: 'mp4',
+    outputExtension: '.mp4',
+    outputContentType: 'video/mp4',
+    videoCodec: 'h264',
+    audioCodec: 'aac'
+  };
 }
 
 /** Resolves an allowlisted video container/codec combination. */
@@ -639,6 +738,15 @@ function uploadSourcePath(id, sourceFilename) {
   if (!match || match[1].toLowerCase() !== id.toLowerCase()
     || (!UPLOAD_TYPES.has(extension) && !AUDIO_UPLOAD_TYPES.has(extension))) return null;
   return join(JOB_DIR, sourceFilename);
+}
+
+/** Resolves the server-owned SRT paired with a subtitle-composition job. */
+function subtitleSourcePath(id, sourceFilename) {
+  if (!/^[a-f0-9-]{36}$/i.test(id || '')) return null;
+  const expected = `${id}.subtitle-source.srt`;
+  return String(sourceFilename || '').toLowerCase() === expected.toLowerCase()
+    ? join(JOB_DIR, expected)
+    : null;
 }
 
 /** Resolves a safe persisted output extension; legacy and remote jobs are MP4. */
@@ -1241,6 +1349,15 @@ async function health(req, res) {
         remoteProviders: ['youtube'],
         localInputs: [...UPLOAD_TYPES.keys()],
         outputFormats: [...SUBTITLE_OUTPUTS.keys()],
+        editableSrt: true,
+        videoComposition: { selectable: true, burned: true, outputFormat: 'mp4' },
+        localTranslation: {
+          enabled: true,
+          sourceLanguage: 'en',
+          targetLanguage: 'es',
+          model: 'Opus MT English–Spanish',
+          modelDownloadEnabled: TRANSCRIPTION_ALLOW_MODEL_DOWNLOAD
+        },
         automaticTranscription: {
           enabled: TRANSCRIPTION_ENABLED,
           engine: 'Transformers.js / Whisper',
@@ -1532,6 +1649,128 @@ async function writeUploadFile(req, filePath, expectedBytes) {
     return received;
   } finally {
     await file.close();
+  }
+}
+
+/**
+ * Streams one request into a small SRT prefix and a potentially large video
+ * suffix. This avoids buffering the media file in memory and requires exact
+ * byte accounting for both server-owned destinations.
+ */
+async function writeSubtitleCompositionUpload(req, subtitlePath, mediaPath, subtitleBytes, mediaBytes) {
+  const subtitleFile = await open(subtitlePath, 'wx');
+  const mediaFile = await open(mediaPath, 'wx');
+  let subtitleReceived = 0;
+  let mediaReceived = 0;
+  const writeFully = async (file, value) => {
+    let offset = 0;
+    while (offset < value.length) {
+      const { bytesWritten } = await file.write(value, offset, value.length - offset);
+      if (bytesWritten < 1) throw httpError('No fue posible escribir la carga temporal.');
+      offset += bytesWritten;
+    }
+  };
+  try {
+    for await (const chunk of req) {
+      let offset = 0;
+      if (subtitleReceived < subtitleBytes) {
+        const count = Math.min(chunk.length, subtitleBytes - subtitleReceived);
+        await writeFully(subtitleFile, chunk.subarray(0, count));
+        subtitleReceived += count;
+        offset = count;
+      }
+      if (offset < chunk.length) {
+        const mediaChunk = chunk.subarray(offset);
+        mediaReceived += mediaChunk.length;
+        if (mediaReceived > mediaBytes || mediaReceived > MAX_UPLOAD_BYTES) {
+          throw httpError('El video recibido supera el tamaño declarado.', 413);
+        }
+        await writeFully(mediaFile, mediaChunk);
+      }
+    }
+    if (subtitleReceived !== subtitleBytes || mediaReceived !== mediaBytes) {
+      throw httpError('La carga combinada quedó incompleta. Inténtalo nuevamente.');
+    }
+    return mediaReceived;
+  } finally {
+    await Promise.all([subtitleFile.close(), mediaFile.close()]);
+  }
+}
+
+/** Runs the fixed local English-to-Spanish model in an isolated process. */
+async function translateSubtitleCues(req, res) {
+  let inputPath = null;
+  let outputPath = null;
+  let translationAcquired = false;
+  try {
+    if (req.headers['x-vdownloader-subtitle'] !== '1'
+      || req.headers['x-vdownloader-translation'] !== '1') {
+      throw httpError('La traducción local no está autorizada desde este origen.', 403);
+    }
+    if (translationActive) throw httpError('Ya hay una traducción local en curso. Inténtalo al terminar.', 409);
+    const body = await readJson(req, MAX_SUBTITLE_TRANSLATION_BODY_BYTES);
+    if (body.sourceLanguage !== 'en' || body.targetLanguage !== 'es'
+      || !Array.isArray(body.texts) || body.texts.length < 1 || body.texts.length > 2_000) {
+      throw httpError('La traducción admite entre 1 y 2000 fragmentos de inglés a español.');
+    }
+    const texts = body.texts.map((value) => String(value || '').replace(/\s+/g, ' ').trim());
+    if (texts.some((value) => !value || value.length > 4_000)
+      || texts.reduce((total, value) => total + value.length, 0) > 200_000) {
+      throw httpError('El texto de subtítulos está vacío o supera el límite permitido.');
+    }
+    await mkdir(JOB_DIR, { recursive: true });
+    const id = randomUUID();
+    inputPath = join(JOB_DIR, `${id}.translation-input.json`);
+    outputPath = join(JOB_DIR, `${id}.translation-output.json`);
+    await writeFile(inputPath, JSON.stringify({ texts }), 'utf8');
+    translationActive = true;
+    translationAcquired = true;
+    const result = await new Promise((done) => {
+      const child = spawn(process.execPath, [
+        TRANSLATION_WORKER_PATH,
+        inputPath,
+        outputPath,
+        TRANSCRIPTION_CACHE_DIR,
+        String(TRANSCRIPTION_ALLOW_MODEL_DOWNLOAD)
+      ], {
+        cwd: JOB_DIR,
+        env: Object.fromEntries(Object.entries({
+          PATH: process.env.PATH,
+          SystemRoot: process.env.SystemRoot,
+          WINDIR: process.env.WINDIR,
+          LANG: process.env.LANG || 'C',
+          TEMP: JOB_DIR,
+          TMP: JOB_DIR
+        }).filter(([, value]) => value != null)),
+        shell: false,
+        windowsHide: true,
+        stdio: ['ignore', 'ignore', 'pipe']
+      });
+      let stderr = '';
+      child.stderr.on('data', (chunk) => { stderr = (stderr + chunk).slice(-4_000); });
+      child.once('error', (error) => done({ code: -1, error: error.message }));
+      child.once('close', (code) => done({ code, error: stderr }));
+    });
+    if (result.code !== 0) throw httpError(
+      /fetch failed|ENOTFOUND|remote models.+disabled/i.test(result.error || '')
+        ? 'No fue posible cargar el modelo local de traducción. Revisa la conexión o precarga el modelo.'
+        : 'No fue posible traducir los subtítulos localmente.',
+      500
+    );
+    const translated = JSON.parse(await readFile(outputPath, 'utf8'));
+    if (!Array.isArray(translated.texts) || translated.texts.length !== texts.length
+      || translated.texts.some((value) => !String(value || '').trim())) {
+      throw httpError('La traducción local no conservó todos los fragmentos.', 500);
+    }
+    logEvent('info', 'subtitle_translation_completed', { cues: texts.length, sourceLanguage: 'en', targetLanguage: 'es' });
+    json(res, 200, { sourceLanguage: 'en', targetLanguage: 'es', texts: translated.texts });
+  } catch (error) {
+    logEvent('warn', 'subtitle_translation_failed', { message: error.message || 'Error desconocido' });
+    json(res, Number(error.statusCode) || 400, { error: error.message || 'No fue posible traducir los subtítulos.' });
+  } finally {
+    if (translationAcquired) translationActive = false;
+    if (inputPath) try { await unlink(inputPath); } catch {}
+    if (outputPath) try { await unlink(outputPath); } catch {}
   }
 }
 
@@ -1975,6 +2214,101 @@ async function createTranscriptionJob(req, res) {
 }
 
 /**
+ * Receives a validated SRT prefix followed by one local video and queues an
+ * MP4 with either a selectable mov_text stream or permanently burned text.
+ */
+async function createSubtitleCompositionJob(req, res) {
+  let sourcePath = null;
+  let subtitlePath = null;
+  try {
+    assertOwnerJobCapacity(req);
+    if (req.headers['x-vdownloader-upload'] !== '1'
+      || req.headers['x-vdownloader-subtitle'] !== '1'
+      || req.headers['x-vdownloader-subtitle-compose'] !== '1') {
+      throw httpError('La composición local de subtítulos no está autorizada desde este origen.', 403);
+    }
+    const metadata = normalizeSubtitleCompositionMetadata({
+      fileName: req.headers['x-upload-name'],
+      contentType: req.headers['content-type'],
+      mediaLength: req.headers['x-upload-size'],
+      totalBytes: req.headers['content-length'],
+      duration: req.headers['x-upload-duration'],
+      start: req.headers['x-upload-start'],
+      end: req.headers['x-upload-end'],
+      subtitleBytes: req.headers['x-subtitle-size'],
+      mode: req.headers['x-subtitle-mode']
+    });
+    await ensureStorageCapacity(metadata.totalBytes + metadata.estimatedSize);
+    await mkdir(JOB_DIR, { recursive: true });
+    const id = randomUUID();
+    const sourceFilename = `${id}.source${metadata.extension}`;
+    const subtitleSourceFilename = `${id}.subtitle-source.srt`;
+    sourcePath = join(JOB_DIR, sourceFilename);
+    subtitlePath = join(JOB_DIR, subtitleSourceFilename);
+    const sourceSize = await writeSubtitleCompositionUpload(
+      req,
+      subtitlePath,
+      sourcePath,
+      metadata.subtitleBytes,
+      metadata.contentLength
+    );
+    const normalizedSrt = normalizeEditableSrt(await readFile(subtitlePath, 'utf8'));
+    await writeFile(subtitlePath, normalizedSrt.text, 'utf8');
+    const baseName = safeDownloadBaseName(metadata.fileName.slice(0, -metadata.extension.length));
+    const job = {
+      id,
+      ownerId: req.auth?.id || 'local',
+      sourceType: 'upload',
+      mediaKind: 'video',
+      sourceUrl: null,
+      sourceFilename,
+      sourceSize,
+      mediaUrl: sourcePath,
+      audioUrl: null,
+      providerId: 'subtitle-compose',
+      type: 'file',
+      clip: metadata.clip,
+      identityProtection: null,
+      expectedDuration: metadata.clip.duration,
+      estimatedSize: metadata.estimatedSize,
+      title: metadata.title,
+      quality: metadata.mode === 'burned' ? 'Subtítulos visibles' : 'Subtítulos seleccionables',
+      outputFormat: 'mp4',
+      outputContentType: 'video/mp4',
+      videoCodec: 'h264',
+      audioCodec: 'aac',
+      subtitleComposeMode: metadata.mode,
+      subtitleSourceFilename,
+      subtitleSourceSize: Buffer.byteLength(normalizedSrt.text, 'utf8'),
+      subtitleCueCount: normalizedSrt.cues.length,
+      filename: `${baseName}-subtitulado.mp4`,
+      outputPath: join(JOB_DIR, `${id}.mp4`),
+      status: 'queued', progress: 0, size: null, error: null,
+      attempts: 0, maxRetries: 0, etaSeconds: null,
+      createdAt: Date.now(), startedAt: null, completedAt: null,
+      restartCount: 0, lastRestartedAt: null,
+      process: null, cancelRequested: false, restartRequested: false,
+      events: []
+    };
+    appendJobEvent(job, 'created');
+    jobs.set(id, job);
+    jobQueue.push(id);
+    schedulePersist();
+    processJobQueue();
+    logEvent('info', 'subtitle_composition_job_created', {
+      jobId: id, sourceSize, cues: normalizedSrt.cues.length, mode: metadata.mode
+    });
+    json(res, 202, publicJob(job));
+  } catch (error) {
+    if (sourcePath) try { await unlink(sourcePath); } catch {}
+    if (subtitlePath) try { await unlink(subtitlePath); } catch {}
+    if (!req.complete && !req.destroyed) req.resume();
+    logEvent('warn', 'subtitle_composition_job_creation_failed', { message: error.message || 'Error desconocido' });
+    json(res, Number(error.statusCode) || 400, { error: error.message || 'No fue posible crear el video con subtítulos.' });
+  }
+}
+
+/**
  * Receives a local audio file and queues a bounded trim/transcode operation.
  * The source is stored with an opaque UUID and removed with the job.
  */
@@ -2282,11 +2616,21 @@ function publicJob(job, includeOwner = false) {
   const stage = ['queued', 'downloading', 'processing', 'finalizing'].includes(job.stage)
     ? job.stage
     : (job.status === 'queued' ? 'queued' : job.status === 'ready' ? 'finalizing' : 'processing');
+  const partialBytes = job.providerId === 'youtube' && job.status !== 'ready'
+    ? Math.max(0, Number(job.sourceSize) || 0)
+    : 0;
+  const partialPercent = partialBytes > 0 && Number(job.estimatedSize) > 0
+    ? Math.min(99, Math.max(1, Math.round(partialBytes / Number(job.estimatedSize) * 100)))
+    : null;
   return {
     id: job.id,
     status: job.status,
     progress: job.progress,
     stage,
+    partialBytes,
+    partialPercent,
+    resumeAvailable: partialBytes > 0,
+    resumedFromBytes: Math.max(0, Number(job.resumeStartedBytes) || 0),
     filename: job.filename,
     provider: job.providerId,
     quality: job.quality,
@@ -2309,10 +2653,72 @@ function publicJob(job, includeOwner = false) {
     subtitleTrackIndex: Number.isInteger(job.subtitleTrackIndex) ? job.subtitleTrackIndex : null,
     subtitleGenerated: Boolean(job.subtitleGenerated),
     transcriptionModelProfile: job.subtitleGenerated ? job.transcriptionModelProfile || null : null,
+    subtitleComposeMode: job.subtitleComposeMode || null,
+    subtitleCueCount: Number(job.subtitleCueCount) || null,
     downloadUrl: job.status === 'ready' ? `/api/jobs/${job.id}/download` : null,
     events: (job.events || []).map(({ at, type, attempt }) => ({ at, type, ...(attempt ? { attempt } : {}) })),
     ...(includeOwner ? { ownerId: job.ownerId || 'local' } : {})
   };
+}
+
+/** Removes only a terminal YouTube job's resumable network staging bytes. */
+async function discardJobPartial(req, res, id) {
+  if (req.headers['x-vdownloader-partial'] !== '1') {
+    return json(res, 403, { error: 'La eliminación del parcial no está autorizada.' });
+  }
+  const job = jobs.get(id);
+  if (!canAccessJob(req, job)) return json(res, 404, { error: 'La tarea no existe o ya caducó.' });
+  if (job.providerId !== 'youtube' || !['error', 'cancelled'].includes(job.status)) {
+    return json(res, 409, { error: 'Solo se puede descartar el parcial de una tarea de YouTube detenida.' });
+  }
+  await removeYoutubeStagingFiles(job.id);
+  job.sourceSize = 0;
+  job.resumeStartedBytes = 0;
+  appendJobEvent(job, 'partial_discarded');
+  schedulePersist();
+  json(res, 200, publicJob(job, req.auth?.role === 'admin'));
+}
+
+/** Builds a bounded support artifact without secrets, paths, URLs, or media. */
+async function downloadDiagnostics(req, res) {
+  if (req.headers['x-vdownloader-diagnostics'] !== '1') {
+    return json(res, 403, { error: 'La exportación de diagnóstico no está autorizada.' });
+  }
+  if (!dependencyStatus || Date.now() - dependencyStatus.checkedAt > 10 * 60 * 1000) {
+    await refreshDependencyStatus();
+  }
+  const visibleJobs = [...jobs.values()].filter((job) => canAccessJob(req, job));
+  const report = {
+    generatedAt: new Date().toISOString(),
+    application: { name: 'vDownloader', version: '1.0.0', uptimeSeconds: Math.floor((Date.now() - SERVICE_STARTED_AT) / 1000) },
+    runtime: { node: process.version, platform: process.platform, architecture: process.arch },
+    dependencies: dependencyStatus,
+    queue: { active: activeJobs, queued: jobQueue.length, maxConcurrent: MAX_CONCURRENT_JOBS, maxRetries: MAX_JOB_RETRIES },
+    storage: { usedBytes: visibleJobs.reduce((total, job) => total + storedJobBytes(job), 0), limitBytes: MAX_STORAGE_BYTES, ttlMinutes: JOB_TTL_MINUTES },
+    capabilities: { uploads: true, transcription: TRANSCRIPTION_ENABLED, remoteAccess: REMOTE_ACCESS_ENABLED, trustedHttpsProxy: TRUSTED_HTTPS_PROXY },
+    jobs: visibleJobs.slice(-25).map((job) => ({
+      id: job.id,
+      status: job.status,
+      stage: publicJob(job).stage,
+      provider: job.providerId,
+      mediaKind: job.mediaKind || 'video',
+      progress: job.progress || 0,
+      attempts: job.attempts || 0,
+      partialBytes: job.providerId === 'youtube' ? Number(job.sourceSize) || 0 : 0,
+      createdAt: job.createdAt,
+      completedAt: job.completedAt || null,
+      events: (job.events || []).slice(-12).map(({ at, type, attempt }) => ({ at, type, ...(attempt ? { attempt } : {}) }))
+    })),
+    recentEvents: operationalEvents.slice(-50)
+  };
+  const payload = `${JSON.stringify(report, null, 2)}\n`;
+  res.writeHead(200, {
+    'content-type': 'application/json; charset=utf-8',
+    'content-disposition': `attachment; filename="vdownloader-diagnostics-${new Date().toISOString().slice(0, 10)}.json"`,
+    'content-length': Buffer.byteLength(payload),
+    'cache-control': 'no-store'
+  });
+  res.end(payload);
 }
 
 /** Devuelve tareas ordenadas y métricas agregadas para el panel. */
@@ -2383,6 +2789,7 @@ export function prepareJobForRestart(job, restartedAt = Date.now()) {
   job.youtubeAudioFormatId = null;
   job.status = 'queued';
   job.stage = 'queued';
+  job.resumeStartedBytes = Math.max(0, Number(job.sourceSize) || 0);
   job.progress = 0;
   job.size = null;
   job.error = null;
@@ -2668,6 +3075,13 @@ async function refreshJobMedia(job) {
     const sourcePath = uploadSourcePath(job.id, job.sourceFilename);
     if (!sourcePath) throw new Error('La referencia del archivo temporal no es válida.');
     try { await stat(sourcePath); } catch { throw new Error('El archivo temporal ya no está disponible.'); }
+    if (job.subtitleComposeMode) {
+      const localSubtitlePath = subtitleSourcePath(job.id, job.subtitleSourceFilename);
+      if (!localSubtitlePath) throw new Error('La referencia temporal de subtítulos no es válida.');
+      try { normalizeEditableSrt(await readFile(localSubtitlePath, 'utf8')); } catch {
+        throw new Error('El archivo temporal de subtítulos ya no está disponible.');
+      }
+    }
     job.mediaUrl = sourcePath;
     job.audioUrl = null;
     job.type = 'file';
@@ -2675,7 +3089,7 @@ async function refreshJobMedia(job) {
       ? 'audio'
       : job.mediaKind === 'subtitle'
         ? (job.subtitleGenerated ? 'transcription' : 'subtitle')
-        : 'upload';
+        : job.subtitleComposeMode ? 'subtitle-compose' : 'upload';
     schedulePersist();
     return;
   }
@@ -3000,6 +3414,7 @@ async function runYoutubeJobAttempt(job) {
   try {
     try { await unlink(job.outputPath); } catch {}
     const selector = youtubeFormatSelector(job);
+    job.resumeStartedBytes = Math.max(0, Number(job.sourceSize) || await youtubeStagingBytes(job.id));
     job.stage = 'downloading';
     schedulePersist();
     const args = [
@@ -3016,6 +3431,7 @@ async function runYoutubeJobAttempt(job) {
     if (job.cancelRequested) {
       await removeYoutubeStagingFiles(job.id);
       job.sourceSize = 0;
+      job.resumeStartedBytes = 0;
       schedulePersist();
       return download;
     }
@@ -3046,6 +3462,7 @@ async function runYoutubeJobAttempt(job) {
       await rename(stagedPath, job.outputPath);
       await removeYoutubeStagingFiles(job.id);
       job.sourceSize = 0;
+      job.resumeStartedBytes = 0;
       job.progress = 99;
       schedulePersist();
       return { code: 0, stderr: download.stderr };
@@ -3056,6 +3473,7 @@ async function runYoutubeJobAttempt(job) {
     if (processed.code === 0 || job.cancelRequested) {
       await removeYoutubeStagingFiles(job.id);
       job.sourceSize = 0;
+      job.resumeStartedBytes = 0;
       schedulePersist();
     }
     return processed;
@@ -3173,7 +3591,46 @@ function runYoutubePostProcess(stagedPath, job, previousStderr = '') {
   });
 }
 
+/** Creates an MP4 with a selectable or burned SRT from server-owned files. */
+function runSubtitleCompositionJobAttempt(job) {
+  const subtitlePath = subtitleSourcePath(job.id, job.subtitleSourceFilename);
+  if (!subtitlePath || !new Set(['selectable', 'burned']).has(job.subtitleComposeMode)) {
+    return Promise.resolve({ code: -1, error: 'Invalid subtitle composition profile', stderr: '' });
+  }
+  const clip = job.clip;
+  const common = [
+    '-hide_banner', '-loglevel', 'error', '-nostats', '-nostdin',
+    ...(clip ? ['-ss', String(clip.start), '-t', String(clip.duration)] : []),
+    '-i', job.mediaUrl
+  ];
+  const encoding = [
+    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-profile:a', 'aac_low', '-b:a', '128k', '-ar', '48000',
+    '-af', 'aresample=async=1:first_pts=0', '-movflags', '+faststart',
+    '-avoid_negative_ts', 'make_zero'
+  ];
+  const args = job.subtitleComposeMode === 'selectable'
+    ? [
+        ...common,
+        '-i', subtitlePath,
+        '-map', '0:v:0', '-map', '0:a:0?', '-map', '1:0',
+        ...encoding,
+        '-c:s', 'mov_text', '-metadata:s:s:0', 'language=spa',
+        '-metadata:s:s:0', 'title=Subtitles', '-disposition:s:0', 'default',
+        '-progress', 'pipe:1', '-y', job.outputPath
+      ]
+    : [
+        ...common,
+        '-map', '0:v:0', '-map', '0:a:0?',
+        '-vf', `subtitles=${job.subtitleSourceFilename}`,
+        ...encoding,
+        '-progress', 'pipe:1', '-y', job.outputPath
+      ];
+  return runSubtitleProcess(FFMPEG_COMMAND, args, job, false);
+}
+
 function runJobAttempt(job) {
+  if (job.subtitleComposeMode) return runSubtitleCompositionJobAttempt(job);
   if (job.mediaKind === 'subtitle') return runSubtitleJobAttempt(job);
   if (job.sourceType === 'remote' && job.providerId === 'youtube') return runYoutubeJobAttempt(job);
   const outputArgs = job.clip ? ['-t', String(job.clip.duration)] : [];
@@ -3377,7 +3834,7 @@ function mediaReferer(mediaUrl) {
 
 /** @returns {number} Bytes ocupados por salidas listas y fuentes temporales. */
 function storedJobBytes(job) {
-  return (job.sourceSize || 0) + (job.status === 'ready' ? job.size || 0 : 0);
+  return (job.sourceSize || 0) + (job.subtitleSourceSize || 0) + (job.status === 'ready' ? job.size || 0 : 0);
 }
 
 /** @returns {number} Uso total conocido dentro de JOB_DIR. */
@@ -3391,6 +3848,8 @@ async function removeJobFiles(job) {
   try { await unlink(job.outputPath); } catch {}
   try { await unlink(join(JOB_DIR, `${job.id}.identity-filter.txt`)); } catch {}
   try { await unlink(join(JOB_DIR, `${job.id}.transcription.wav`)); } catch {}
+  const compositionSubtitle = subtitleSourcePath(job.id, job.subtitleSourceFilename);
+  if (compositionSubtitle) try { await unlink(compositionSubtitle); } catch {}
   await removeYoutubeStagingFiles(job.id);
   const sourceFilenames = Array.isArray(job.audioSources) && job.audioSources.length
     ? job.audioSources.map((source) => source.sourceFilename)
@@ -3445,6 +3904,7 @@ async function persistJobs() {
     sourceUrl: job.sourceUrl,
     sourceFilename: job.sourceFilename || null,
     sourceSize: job.sourceSize || 0,
+    resumeStartedBytes: job.resumeStartedBytes || 0,
     audioSources: Array.isArray(job.audioSources) ? job.audioSources.map((source) => ({
       sourceFilename: source.sourceFilename,
       sourceSize: source.sourceSize,
@@ -3472,6 +3932,10 @@ async function persistJobs() {
     subtitleTrackIndex: Number.isInteger(job.subtitleTrackIndex) ? job.subtitleTrackIndex : null,
     subtitleGenerated: Boolean(job.subtitleGenerated),
     transcriptionModelProfile: job.subtitleGenerated ? job.transcriptionModelProfile || null : null,
+    subtitleComposeMode: job.subtitleComposeMode || null,
+    subtitleSourceFilename: job.subtitleSourceFilename || null,
+    subtitleSourceSize: Number(job.subtitleSourceSize) || 0,
+    subtitleCueCount: Number(job.subtitleCueCount) || null,
     filename: job.filename,
     status: job.status,
     stage: job.stage || null,
@@ -3510,6 +3974,8 @@ async function initializeJobs() {
       if (/^[a-f0-9-]{36}$/i.test(record.id || '')) {
         try { await unlink(join(JOB_DIR, `${record.id}${outputExtensionForJob(record)}`)); } catch {}
         try { await unlink(join(JOB_DIR, `${record.id}.transcription.wav`)); } catch {}
+        const expiredSubtitleSource = subtitleSourcePath(record.id, record.subtitleSourceFilename);
+        if (expiredSubtitleSource) try { await unlink(expiredSubtitleSource); } catch {}
         await removeYoutubeStagingFiles(record.id);
         const expiredFilenames = Array.isArray(record.audioSources) && record.audioSources.length
           ? record.audioSources.map((source) => source.sourceFilename)
@@ -3527,6 +3993,11 @@ async function initializeJobs() {
       : record.mediaKind === 'audio'
         ? 'audio'
         : 'video';
+    const restoredSubtitleComposeMode = sourceType === 'upload' && mediaKind === 'video'
+      && new Set(['selectable', 'burned']).has(record.subtitleComposeMode)
+      ? record.subtitleComposeMode
+      : null;
+    if (record.providerId === 'subtitle-compose' && !restoredSubtitleComposeMode) continue;
     // A persisted audio job is restored only when its output profile is still
     // explicitly supported. This prevents an edited/corrupt jobs.json from
     // selecting an arbitrary filename extension or FFmpeg output container.
@@ -3574,6 +4045,7 @@ async function initializeJobs() {
     }
     let sourcePath = null;
     let sourceSize = 0;
+    let restoredSubtitleSourceSize = 0;
     let sourceExists = false;
     let audioSources = null;
     if (sourceType === 'upload') {
@@ -3581,7 +4053,7 @@ async function initializeJobs() {
         ? 'audio'
         : mediaKind === 'subtitle'
           ? (restoredSubtitleGenerated ? 'transcription' : 'subtitle')
-          : 'upload';
+          : restoredSubtitleComposeMode ? 'subtitle-compose' : 'upload';
       if (record.providerId !== expectedProvider) continue;
       if (mediaKind === 'audio' && Array.isArray(record.audioSources) && record.audioSources.length > 1) {
         if (record.audioSources.length > MAX_AUDIO_JOIN_SOURCES) continue;
@@ -3613,6 +4085,19 @@ async function initializeJobs() {
           sourceSize = (await stat(sourcePath)).size;
           sourceExists = true;
         } catch {}
+        if (sourceExists && restoredSubtitleComposeMode) {
+          const restoredSubtitlePath = subtitleSourcePath(record.id, record.subtitleSourceFilename);
+          if (!restoredSubtitlePath) {
+            sourceExists = false;
+          } else {
+            try {
+              normalizeEditableSrt(await readFile(restoredSubtitlePath, 'utf8'));
+              restoredSubtitleSourceSize = (await stat(restoredSubtitlePath)).size;
+            } catch {
+              sourceExists = false;
+            }
+          }
+        }
       }
     } else {
       try {
@@ -3628,6 +4113,7 @@ async function initializeJobs() {
       sourceType,
       mediaKind,
       sourceSize,
+      resumeStartedBytes: Math.max(0, Number(record.resumeStartedBytes) || 0),
       audioSources,
       mediaUrl: sourceType === 'upload' && sourceExists ? sourcePath : null,
       audioUrl: null,
@@ -3655,6 +4141,10 @@ async function initializeJobs() {
       subtitleGenerated: restoredSubtitleGenerated,
       transcriptionModelProfile: restoredTranscriptionModelProfile,
       transcriptionModelId: restoredTranscriptionModel?.modelId || null,
+      subtitleComposeMode: restoredSubtitleComposeMode,
+      subtitleSourceFilename: restoredSubtitleComposeMode ? record.subtitleSourceFilename : null,
+      subtitleSourceSize: restoredSubtitleSourceSize,
+      subtitleCueCount: restoredSubtitleComposeMode ? Math.max(1, Number(record.subtitleCueCount) || 1) : null,
       outputPath: join(JOB_DIR, `${record.id}${outputExtensionForJob(record)}`),
       process: null,
       cancelRequested: false,
@@ -3980,7 +4470,7 @@ export async function handleRequest(req, res) {
     return json(res, 426, { error: 'El acceso remoto requiere una conexión HTTPS verificada.' });
   }
   const requestUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-  const jobMatch = requestUrl.pathname.match(/^\/api\/jobs\/([a-f0-9-]+)(\/download|\/download-access|\/restart)?$/i);
+  const jobMatch = requestUrl.pathname.match(/^\/api\/jobs\/([a-f0-9-]+)(\/download|\/download-access|\/restart|\/partial)?$/i);
   const mediaMatch = requestUrl.pathname.match(/^\/api\/media\/([a-f0-9-]{36})$/i);
   const isApi = requestUrl.pathname.startsWith('/api/');
   const isAdministrative = requestUrl.pathname.startsWith('/api/admin/') || requestUrl.pathname.endsWith('/restart');
@@ -4012,6 +4502,7 @@ export async function handleRequest(req, res) {
     }
   }
   if (req.method === 'GET' && requestUrl.pathname === '/api/health') return health(req, res);
+  if (req.method === 'GET' && requestUrl.pathname === '/api/diagnostics') return downloadDiagnostics(req, res);
   if (req.method === 'POST' && requestUrl.pathname === '/api/analyze') return analyze(req, res);
   if (req.method === 'POST' && requestUrl.pathname === '/api/identity-tracks') return createIdentityTrack(req, res);
   if (req.method === 'POST' && requestUrl.pathname === '/api/upload-jobs') return createUploadJob(req, res);
@@ -4019,6 +4510,8 @@ export async function handleRequest(req, res) {
   if (req.method === 'POST' && requestUrl.pathname === '/api/subtitle-jobs') return createRemoteSubtitleJob(req, res);
   if (req.method === 'POST' && requestUrl.pathname === '/api/subtitle-upload-jobs') return createLocalSubtitleJob(req, res);
   if (req.method === 'POST' && requestUrl.pathname === '/api/transcription-jobs') return createTranscriptionJob(req, res);
+  if (req.method === 'POST' && requestUrl.pathname === '/api/subtitle-compose-jobs') return createSubtitleCompositionJob(req, res);
+  if (req.method === 'POST' && requestUrl.pathname === '/api/subtitle-translate') return translateSubtitleCues(req, res);
   if (req.method === 'POST' && requestUrl.pathname === '/api/audio-jobs') return createAudioUploadJob(req, res);
   if (req.method === 'POST' && requestUrl.pathname === '/api/audio-join-jobs') return createAudioJoinJob(req, res);
   if (req.method === 'POST' && requestUrl.pathname === '/api/remote-audio-jobs') return createRemoteAudioJob(req, res);
@@ -4030,6 +4523,7 @@ export async function handleRequest(req, res) {
   if (req.method === 'GET' && jobMatch && !jobMatch[2]) return getJob(req, res, jobMatch[1]);
   if (req.method === 'DELETE' && jobMatch && !jobMatch[2]) return cancelJob(req, res, jobMatch[1]);
   if (req.method === 'POST' && jobMatch?.[2] === '/restart') return restartJob(req, res, jobMatch[1]);
+  if (req.method === 'DELETE' && jobMatch?.[2] === '/partial') return discardJobPartial(req, res, jobMatch[1]);
   if (req.method === 'POST' && jobMatch?.[2] === '/download-access') return createDownloadGrant(req, res, jobMatch[1]);
   if (['GET', 'HEAD'].includes(req.method) && jobMatch?.[2] === '/download') return downloadJob(req, res, jobMatch[1]);
   if (req.method === 'GET' && mediaMatch) return previewMedia(req, res, mediaMatch[1]);

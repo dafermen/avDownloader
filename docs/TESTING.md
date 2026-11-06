@@ -16,7 +16,9 @@ npm run verify:deploy
 
 The command stops on the first failure and writes
 `reports/predeploy-report.json`. Reports are local evidence and are intentionally
-ignored by Git. CI runs the same gate on Ubuntu.
+ignored by Git. CI runs the same gate on Ubuntu. The gate also runs Playwright
+visual/accessibility regression checks after acceptance; install its managed
+Chromium once with `npx playwright install chromium`.
 
 ## Required categories
 
@@ -29,7 +31,7 @@ ignored by Git. CI runs the same gate on Ubuntu.
 | 5 | Fuzzing | `npm run test:fuzz`; send deterministic malformed and random input through URL trust boundaries |
 | 6 | Integration | `npm run test:integration`; exercise the real HTTP router and component boundaries |
 | 7 | Contract | `npm run test:contract`; preserve public JSON fields, status codes, and error shape |
-| 8 | End-to-end | `npm run test:e2e`; load the application, run real isolated WAV-to-MP3, two-source audio join, MP4-to-WebM VP9/Opus, selected-range MP4-to-MP3 extraction, embedded-subtitle-to-SRT, and mock-model local-transcription journeys through HTTP; complete browser/media checks manually |
+| 8 | End-to-end | `npm run test:e2e`; load the application, run real isolated WAV-to-MP3, two-source audio join, MP4-to-WebM VP9/Opus, selected-range MP4-to-MP3 extraction, embedded-subtitle-to-SRT, selectable/burned SRT-to-MP4, and mock-model local-transcription journeys through HTTP; complete browser/media checks manually |
 | 9 | Regression | `npm run test:regression`; preserve fixes for hidden signed URLs and adaptive audio |
 | 10 | Security | `npm run test:security` plus `npm audit --omit=dev`; test SSRF and control headers, then audit runtime dependencies |
 | 11 | Concurrency and resilience | `npm run test:resilience`; exercise parallel reads and recovery after malformed requests |
@@ -58,7 +60,18 @@ test/
   compatibility/  runtime and deployment assumptions
   fixtures/       synthetic, non-personal inputs
   helpers/        reusable test infrastructure
+  visual/         committed Playwright screenshot baselines
 ```
+
+The Playwright specifications live separately under <code>playwright/</code>
+so Node's built-in <code>--test</code> discovery never executes them as Node
+test files.
+
+`npm run test:visual` compares Chromium captures under
+`test/visual/__snapshots__/` and checks the primary video, audio, and subtitle
+entry points in Spanish and English at desktop and mobile sizes. Use
+`npm run test:visual:update` only after intentionally reviewing a visual
+change; never update baselines merely to hide an unexplained difference.
 
 ## Manual evidence required before deployment
 

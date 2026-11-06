@@ -13,9 +13,17 @@ advice and does not modify the original licenses.
 | [`@mediapipe/tasks-vision`](https://www.npmjs.com/package/@mediapipe/tasks-vision) | 0.10.35 | Apache-2.0 | Detects faces locally in the browser for Identity protection. |
 | [`@huggingface/transformers`](https://github.com/huggingface/transformers.js) | 4.3.1 | Apache-2.0 | Runs local Whisper automatic speech recognition in an isolated Node worker. |
 | [`Xenova/whisper-tiny`](https://huggingface.co/Xenova/whisper-tiny) and [`Xenova/whisper-base`](https://huggingface.co/Xenova/whisper-base) | Downloaded on demand | Apache-2.0 | Quantized ONNX speech-to-text models cached in `TRANSCRIPTION_CACHE_DIR`; not committed to this repository. |
+| [`Xenova/opus-mt-en-es`](https://huggingface.co/Xenova/opus-mt-en-es) | Downloaded on demand | Apache-2.0 | Fixed local English-to-Spanish subtitle translation model cached in `TRANSCRIPTION_CACHE_DIR`; not committed to this repository. |
 | [BlazeFace Short Range](https://ai.google.dev/edge/mediapipe/solutions/vision/face_detector) | float16, revision 1 | Apache-2.0 (MediaPipe) | Local TFLite model used to locate faces; distributed in `public/models/`. |
 | [`youtube-dl-exec`](https://github.com/microlinkhq/youtube-dl-exec) | 3.0.22 | MIT | Adapts yt-dlp execution for Node.js; vDownloader uses the system tool on Linux. |
 | [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) | Independently updated | Unlicense; artifacts may include components under other licenses | Retrieves public YouTube metadata and formats. |
+
+## Development and test dependencies
+
+| Component | Current version | Declared license | Purpose |
+|---|---:|---|---|
+| [`@playwright/test`](https://playwright.dev/) | 1.65.0 | Apache-2.0 | Runs deterministic Chromium desktop/mobile flows and screenshot comparisons. |
+| [`@axe-core/playwright`](https://github.com/dequelabs/axe-core-npm) | 4.14.0 | MPL-2.0 | Performs basic automated accessibility checks inside the Playwright browser. |
 
 Exact versions, including transitive npm dependencies, are pinned in
 `package-lock.json`. Installed license texts are available in the respective
@@ -44,11 +52,12 @@ system-managed tool through `YT_DLP_PATH` or `PATH`; other development
 environments may use the artifact installed by npm. See the [official yt-dlp
 license section](https://github.com/yt-dlp/yt-dlp#license).
 
-### Transformers.js and Whisper models
+### Transformers.js, Whisper, and Opus-MT models
 
-Transformers.js and the allowlisted Xenova Whisper model repositories declare
-Apache-2.0. The selected model is downloaded from Hugging Face on first use and
-cached locally; audio and transcript contents are not uploaded to Hugging Face.
+Transformers.js and the allowlisted Xenova Whisper and Opus-MT model
+repositories declare Apache-2.0. The selected model is downloaded from Hugging
+Face on first use and cached locally; audio and subtitle contents are not
+uploaded to Hugging Face.
 An offline operator can preload the artifacts and disable remote model loading.
 If model profiles or revisions change, review the new model card and license
 before distribution.

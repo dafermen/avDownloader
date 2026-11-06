@@ -31,6 +31,8 @@
     "test:resilience": "node --test test/resilience/concurrency.resilience.test.js",
     "test:performance": "node --test test/performance/resource-budget.performance.test.js",
     "test:compatibility": "node --test test/compatibility/deployment.compatibility.test.js",
+    "test:visual": "playwright test",
+    "test:visual:update": "playwright test --update-snapshots",
     "check:syntax": "node scripts/check-syntax.js",
     "verify:deploy": "node scripts/predeploy-check.js",
     "update:yt-dlp": "node scripts/update-yt-dlp.js"
@@ -46,5 +48,9 @@
   },
   "optionalDependencies": {
     "ffmpeg-static": "^5.2.0"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@playwright/test": "^1.65.0"
   }
 }

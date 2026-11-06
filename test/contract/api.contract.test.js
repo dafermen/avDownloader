@@ -45,3 +45,48 @@ test('API errors remain JSON and do not expose internal paths', async () => {
     await application.close();
   }
 });
+
+test('downloadable diagnostics require an explicit header and omit secrets and paths', async () => {
+  const application = await startTestServer();
+  try {
+    const rejected = await fetch(`${application.baseUrl}/api/diagnostics`);
+    assert.equal(rejected.status, 403);
+
+    const response = await fetch(`${application.baseUrl}/api/diagnostics`, {
+      headers: { 'x-vdownloader-diagnostics': '1' }
+    });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-disposition'), /attachment/i);
+    assert.equal(body.application.name, 'vDownloader');
+    assert.equal(typeof body.dependencies.ffmpeg.available, 'boolean');
+    const serialized = JSON.stringify(body);
+    assert.equal(serialized.includes(process.cwd()), false);
+    assert.doesNotMatch(serialized, /ADMIN_TOKEN|ACCESS_TOKENS_JSON|authorization|googlevideo/i);
+  } finally {
+    await application.close();
+  }
+});
+
+test('partial cleanup and subtitle translation require non-simple control headers', async () => {
+  const application = await startTestServer();
+  try {
+    const id = '11111111-1111-4111-8111-111111111111';
+    const partial = await fetch(`${application.baseUrl}/api/jobs/${id}/partial`, { method: 'DELETE' });
+    assert.equal(partial.status, 403);
+    const missingPartial = await fetch(`${application.baseUrl}/api/jobs/${id}/partial`, {
+      method: 'DELETE',
+      headers: { 'x-vdownloader-partial': '1' }
+    });
+    assert.equal(missingPartial.status, 404);
+
+    const translation = await fetch(`${application.baseUrl}/api/subtitle-translate`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sourceLanguage: 'en', targetLanguage: 'es', texts: ['Hello'] })
+    });
+    assert.equal(translation.status, 403);
+  } finally {
+    await application.close();
+  }
+});

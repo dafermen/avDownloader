@@ -1,5 +1,49 @@
 # Current vDownloader status
 
+## Recovery visibility, subtitle workshop, estimates, notifications, diagnostics, and visual QA — local candidate, 2026-11-05
+
+YouTube jobs now expose only safe resumable-state metadata: preserved byte
+count, approximate percentage, and the byte position used by the current
+attempt. Active and panel cards explain when a transfer is resuming. Owners can
+explicitly discard a terminal job's UUID-owned partial through the protected
+`DELETE /api/jobs/:id/partial` route; no provider URL or format ID is exposed.
+
+Remote video and YouTube audio creation now display a preflight estimate for
+final size, processing time, and available configured storage, including long
+job and insufficient-space warnings. The Download Center offers opt-in browser
+notifications, an optional local completion tone, a ready-task badge/tab count,
+and a downloadable diagnostic JSON. The report contains public versions,
+queue/storage state, bounded sanitized lifecycle events, and dependency status;
+it excludes tokens, URLs, paths, media, and subtitle text.
+
+The local subtitle workflow has a third mode, **Edit and embed subtitles**. It
+imports a bounded SRT, exposes structured text/start/end fields, supports cue
+addition/removal and browser-local WebVTT preview, downloads normalized edited
+SRT, and translates English cue text to Spanish with the fixed local
+`Xenova/opus-mt-en-es` worker. Translation preserves cue count/order/timestamps.
+The complete video and validated SRT stream into a persistent job that creates
+an H.264/AAC MP4 with either selectable `mov_text` or permanently burned text.
+The private SRT participates in quota, persistence, restart, expiration, and
+cleanup; browser requests cannot choose filesystem paths, model URLs, filters,
+codecs, or FFmpeg arguments.
+
+Playwright 1.65.0 plus axe-core 4.14.0 now cover deterministic Spanish desktop
+and English mobile entry points for video, audio, and subtitles, serious/
+critical accessibility checks, and four reviewed Chromium screenshot baselines
+under `test/visual/__snapshots__`. The deployment gate runs this suite, and
+Linux CI installs Playwright Chromium first. Accessibility findings corrected
+low-contrast secondary text and the brand accessible name.
+
+Executed validation at this checkpoint: the complete regression suite passed
+87/87 tests; the real FFmpeg E2E test produced both selectable and burned MP4
+outputs; and both Playwright visual/accessibility tests matched the four
+reviewed baselines. `npm run verify:deploy` passed all thirteen automated test
+categories, JavaScript syntax, the 3/3 mutation check, and the production
+dependency audit with zero reported vulnerabilities. Real model translation,
+browser notification permission, an interrupted YouTube resume, cross-player
+subtitle selection, and the manual release checklist remain manual validation
+items and must not be claimed as completed.
+
 ## Guided creation workflow and resumable YouTube parts — local candidate, 2026-11-05
 
 The home page now begins with a task-first quick start for Video, Audio only,

@@ -43,6 +43,17 @@ Identity protection coordinates, persisted job state, and child-process output.
   model profile; map model IDs server-side; keep uploaded audio and temporary
   16 kHz PCM local; and delete PCM after success, failure, cancellation, or
   cleanup. Treat model files as dependencies, not user-selected URLs.
+- Require separate translation and composition headers. Translation accepts
+  only a bounded English-to-Spanish cue array and the server-selected fixed
+  model. Composition verifies exact SRT/media byte counts, canonical ordered
+  cues, an allowlisted video, and a selectable/burned enum before streaming to
+  UUID-owned files. Never expose or log cue text, cache paths, or the private
+  SRT filename.
+- Require an explicit non-simple header for partial cleanup and diagnostics.
+  Partial cleanup is owner-scoped and terminal-only. Diagnostics contain only
+  public versions, bounded safe event fields, numeric storage/queue state, and
+  sanitized job facts; never include environment values, paths, URLs, tokens,
+  cookies, media names/content, or subtitle text.
 - Limit upload size, storage, clip duration, samples, coordinates, retries, and
   concurrency.
 - Serve HLS.js, MediaPipe, WASM, and the face model locally.
@@ -57,8 +68,8 @@ Identity protection coordinates, persisted job state, and child-process output.
   Do not buffer multi-gigabyte files in JavaScript Blobs to work around header
   authentication.
 - Spawn FFmpeg without a shell, with a controlled working directory and reduced
-  environment. Spawn the speech worker without a shell and pass only internal
-  paths plus validated identifiers. Use the supplied unprivileged systemd unit for Linux and add a
+  environment. Spawn the speech and translation workers without a shell and
+  pass only internal paths plus validated identifiers. Use the supplied unprivileged systemd unit for Linux and add a
   container or stronger OS sandbox for a public hostile-media threat model.
 
 ## Remote configuration

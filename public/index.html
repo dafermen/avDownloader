@@ -6,7 +6,7 @@
   <meta name="description" content="vDownloader downloads supported videos and provides local video trimming and audio transcoding tools.">
   <title>vDownloader</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=33">
+  <link rel="stylesheet" href="/styles.css?v=35">
 </head>
 <body>
   <main class="shell">
@@ -21,6 +21,7 @@
           </select>
         </label>
         <a class="docs-link" href="/docs.html" data-i18n="nav.docs">Documentación</a>
+        <span id="ready-counter" class="ready-counter" hidden aria-live="polite"></span>
         <span class="status"><i></i> <span data-i18n="nav.status">Servicio local</span></span>
       </div>
     </nav>
@@ -363,6 +364,7 @@
           <div class="subtitle-source-tabs subtitle-local-modes" role="group" aria-label="Método para obtener subtítulos" data-i18n-aria="subtitle.localModeAria">
             <button id="subtitle-mode-existing" class="secondary-action is-active" type="button" aria-pressed="true" data-i18n="subtitle.modeExisting">Extraer pista de un video</button>
             <button id="subtitle-mode-generate" class="secondary-action" type="button" aria-pressed="false" data-i18n="subtitle.modeGenerate">Generar desde audio o video</button>
+            <button id="subtitle-mode-compose" class="secondary-action" type="button" aria-pressed="false" data-i18n="subtitle.modeCompose">Editar e incrustar subtítulos</button>
           </div>
           <label class="local-file-picker subtitle-local-picker" for="subtitle-video-file">
             <span id="subtitle-local-picker-label" data-i18n="subtitle.selectVideo">Seleccionar video local</span>
@@ -410,6 +412,28 @@
                   </select>
                 </label>
               </div>
+              <section id="subtitle-workshop" class="subtitle-workshop" hidden>
+                <div class="subtitle-workshop-heading">
+                  <div><span data-i18n="subtitle.workshopEyebrow">Editor SRT</span><h3 data-i18n="subtitle.workshopTitle">Revisa texto y sincronización</h3></div>
+                  <label class="secondary-action subtitle-caption-picker" for="subtitle-caption-file">
+                    <span data-i18n="subtitle.importSrt">Importar SRT</span>
+                    <input id="subtitle-caption-file" type="file" accept=".srt,application/x-subrip,text/plain" hidden>
+                  </label>
+                </div>
+                <p data-i18n="subtitle.workshopDescription">Importa un SRT, corrige cada fragmento y comprueba la vista previa antes de crear el video.</p>
+                <div class="subtitle-workshop-actions">
+                  <button id="subtitle-add-cue" type="button" class="secondary-action" data-i18n="subtitle.addCue">Agregar fragmento</button>
+                  <button id="subtitle-translate" type="button" class="secondary-action" data-i18n="subtitle.translateEnEs">Traducir inglés → español</button>
+                  <button id="subtitle-preview-toggle" type="button" class="secondary-action" data-i18n="subtitle.preview">Vista previa</button>
+                </div>
+                <div id="subtitle-cue-list" class="subtitle-cue-list" aria-live="polite"></div>
+                <div class="subtitle-compose-actions">
+                  <button id="subtitle-download-srt" type="button" class="secondary-action" data-i18n="subtitle.downloadSrt">Descargar SRT editado</button>
+                  <button id="subtitle-compose-selectable" type="button" data-i18n="subtitle.composeSelectable">Crear MP4 con subtítulos seleccionables</button>
+                  <button id="subtitle-compose-burned" type="button" data-i18n="subtitle.composeBurned">Crear MP4 con subtítulos visibles</button>
+                </div>
+                <p class="audio-output-hint" data-i18n="subtitle.composeHint">Los subtítulos seleccionables pueden activarse o desactivarse en un reproductor compatible; los visibles quedan impresos permanentemente.</p>
+              </section>
               <p id="subtitle-local-hint" class="audio-output-hint" data-i18n="subtitle.localHint">Selecciona la posición de la pista dentro del video. Si no existe, la tarea mostrará un mensaje claro sin modificar el archivo original.</p>
               <div id="subtitle-local-summary" class="export-summary" hidden><span data-i18n="summary.label">Resultado</span><strong id="subtitle-local-summary-text"></strong></div>
               <button id="subtitle-local-export" type="button" data-i18n="subtitle.export">Exportar subtítulos</button>
@@ -427,6 +451,11 @@
           <div id="panel-config" class="panel-config"></div>
         </div>
         <div id="dependency-health" class="dependency-health" aria-label="Estado de dependencias" data-i18n-aria="downloads.healthAria"></div>
+        <div class="panel-utilities" aria-label="Avisos y diagnóstico" data-i18n-aria="notifications.controlsAria">
+          <label><input id="notification-enabled" type="checkbox"> <span data-i18n="notifications.desktop">Notificación al terminar</span></label>
+          <label><input id="notification-sound" type="checkbox"> <span data-i18n="notifications.sound">Sonido opcional</span></label>
+          <button id="download-diagnostics" type="button" class="secondary-action" data-i18n="diagnostics.download">Exportar diagnóstico</button>
+        </div>
         <details class="admin-tools">
           <summary data-i18n="admin.summary">Administración de tareas</summary>
           <div class="admin-tools-body">
@@ -487,6 +516,6 @@
     </footer>
   </main>
   <script src="/vendor/hls.min.js"></script>
-  <script src="/app.js?v=40" type="module"></script>
+  <script src="/app.js?v=42" type="module"></script>
 </body>
 </html>

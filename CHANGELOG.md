@@ -1,5 +1,20 @@
 # Changelog
 
+## Subtitle workshop and operational feedback — candidate 2026-11-05
+
+- Added visible YouTube partial-byte/resume state and an owner-scoped action to
+  discard a stopped partial safely.
+- Added preflight size/time/storage estimates, long-job warnings, browser
+  completion notifications, optional sound, and a ready-tab counter.
+- Added a downloadable sanitized diagnostic report with public versions,
+  dependency state, bounded events, and no secrets, URLs, paths, or media.
+- Added a structured SRT editor, browser-local caption preview, local fixed
+  English-to-Spanish translation, edited SRT download, and persistent MP4 jobs
+  with selectable or burned subtitles.
+- Added Playwright Chromium desktop/mobile and Spanish/English screenshot
+  regression, video/audio/subtitle entry flows, axe-core accessibility checks,
+  Linux CI browser installation, and deployment-gate integration.
+
 ## Guided creation and resumable YouTube staging — candidate 2026-11-05
 
 - Added a task-first quick start for video, audio-only, subtitles, and local
