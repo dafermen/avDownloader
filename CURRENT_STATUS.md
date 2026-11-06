@@ -353,7 +353,7 @@ time-limited; large real-media user acceptance is still pending.
 
 InnovaLogic documentation theme, reading paths and reading controls are implemented. 55 tests PASS; documentation JavaScript syntax PASS; browser at 1440 and 390 px PASS. No media provider or paid API calls. See [navigation maintenance and evidence](docs/WEB_NAVIGATION.md). GitHub and server delivery of this revision are pending; earlier deployment status below remains historical evidence.
 
-Last updated: 2026-11-02
+Last updated: 2026-11-05
 
 ## Current phase
 
