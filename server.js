@@ -1,7 +1,8 @@
 import http from 'node:http';
 import https from 'node:https';
-import { createReadStream } from 'node:fs';
-import { mkdir, open, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { createReadStream, existsSync } from 'node:fs';
+import { resolveUploadSettings } from './upload-settings.js';
+import { mkdir, open, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { extname, join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
@@ -12,13 +13,18 @@ import { pornhubProvider } from './providers/pornhub.js';
 import { parseHlsManifest as parseProviderHlsManifest } from './providers/utils.js';
 import { xnxxProvider } from './providers/xnxx.js';
 import { xvideosProvider } from './providers/xvideos.js';
-import { getYtDlpStatus } from './providers/youtube.js';
+import { getYtDlpStatus, YT_DLP_COMMAND } from './providers/youtube.js';
 
 /**
  * Configuración inmutable del proceso. Las variables de entorno permiten
  * adaptar el servicio sin modificar código. Todos los límites se normalizan
  * aquí para que el resto del programa trabaje con valores seguros.
  */
+const localEnvPath = fileURLToPath(new URL('./.env', import.meta.url));
+if (existsSync(localEnvPath)) {
+  if (typeof process.loadEnvFile !== 'function') throw new Error('Loading .env requires Node.js 20.12 or later.');
+  process.loadEnvFile(localEnvPath);
+}
 const PORT = Number(process.env.PORT) || 5177;
 let ffmpegFallbackPath = null;
 if (process.platform !== 'linux' && !process.env.FFMPEG_PATH) {
@@ -35,6 +41,15 @@ const PAGE_TIMEOUT_MS = 15_000;
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36';
 const JOB_DIR = resolve(process.env.JOB_DIR || fileURLToPath(new URL('./data/jobs/', import.meta.url)));
 const JOB_INDEX_FILE = join(JOB_DIR, 'jobs.json');
+const TRANSCRIPTION_ENABLED = !/^false$/i.test(process.env.TRANSCRIPTION_ENABLED || '');
+const configuredTranscriptionMinutes = Number(process.env.MAX_TRANSCRIPTION_MINUTES);
+const MAX_TRANSCRIPTION_MINUTES = Number.isFinite(configuredTranscriptionMinutes) && configuredTranscriptionMinutes >= 1
+  ? Math.min(180, Math.floor(configuredTranscriptionMinutes))
+  : 180;
+const TRANSCRIPTION_CACHE_DIR = resolve(process.env.TRANSCRIPTION_CACHE_DIR || join(JOB_DIR, '..', 'models'));
+const TRANSCRIPTION_ALLOW_MODEL_DOWNLOAD = !/^false$/i.test(process.env.TRANSCRIPTION_ALLOW_MODEL_DOWNLOAD || '');
+const TRANSCRIPTION_WORKER_PATH = resolve(process.env.TRANSCRIPTION_WORKER_PATH
+  || fileURLToPath(new URL('./transcription-worker.js', import.meta.url)));
 const configuredTtlMinutes = Number(process.env.JOB_TTL_MINUTES);
 const JOB_TTL_MINUTES = Number.isFinite(configuredTtlMinutes) && configuredTtlMinutes >= 5
   ? Math.min(10_080, Math.floor(configuredTtlMinutes))
@@ -45,13 +60,10 @@ const configuredRetries = Number(process.env.MAX_JOB_RETRIES);
 const MAX_JOB_RETRIES = Number.isFinite(configuredRetries) && configuredRetries >= 0
   ? Math.min(5, Math.floor(configuredRetries))
   : 2;
-const configuredStorageGb = Number(process.env.MAX_STORAGE_GB);
-const MAX_STORAGE_BYTES = Math.round((Number.isFinite(configuredStorageGb) && configuredStorageGb > 0 ? configuredStorageGb : 10) * 1024 ** 3);
-const configuredUploadGb = Number(process.env.MAX_UPLOAD_GB);
-const MAX_UPLOAD_BYTES = Math.min(
-  MAX_STORAGE_BYTES,
-  Math.round((Number.isFinite(configuredUploadGb) && configuredUploadGb > 0 ? configuredUploadGb : 2) * 1024 ** 3)
-);
+const uploadSettings = resolveUploadSettings();
+const MAX_STORAGE_BYTES = uploadSettings.storageBytes;
+// Without a per-upload cap, the aggregate storage ceiling still bounds input.
+const MAX_UPLOAD_BYTES = uploadSettings.effectiveMaxBytes;
 // Si ADMIN_TOKEN está vacío, las acciones administrativas solo se permiten
 // desde el propio equipo (localhost). En un servidor remoto debe configurarse.
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN?.trim() || '';
@@ -72,14 +84,22 @@ const ACCESS_PROFILES = parseAccessProfiles(process.env.ACCESS_TOKENS_JSON || '[
 const jobs = new Map();
 const jobQueue = [];
 const mediaSelections = new Map();
+const subtitleSelections = new Map();
 const mediaReferences = new Map();
 const identityTracks = new Map();
 const requestRates = new Map();
 const authenticationFailures = new Map();
 const administrativeAudit = [];
+const downloadGrants = new Map();
 const SELECTION_TTL_MS = 15 * 60 * 1000;
+const SUBTITLE_SELECTION_TTL_MS = 15 * 60 * 1000;
 const MEDIA_REFERENCE_TTL_MS = 30 * 60 * 1000;
 const IDENTITY_TRACK_TTL_MS = 30 * 60 * 1000;
+// Browser navigations cannot attach the bearer header kept in sessionStorage.
+// A short-lived, job-scoped HttpOnly cookie authorizes only the prepared file
+// and keeps both the native access token and the grant out of URLs.
+const DOWNLOAD_GRANT_TTL_MS = 30 * 60 * 1000;
+const MAX_DOWNLOAD_GRANTS = 1_000;
 let activeJobs = 0;
 let persistTimer = null;
 const SERVICE_STARTED_AT = Date.now();
@@ -192,6 +212,45 @@ function safeFilename(value) {
   return (clean || 'video').slice(0, 100);
 }
 
+/**
+ * Preserves a user-facing media name while removing only characters that are
+ * unsafe in downloaded file names across Windows, macOS, and Linux. Unlike
+ * safeFilename(), this helper intentionally keeps spaces, case, and accents.
+ */
+function safeDownloadBaseName(value) {
+  const clean = String(value || '')
+    .normalize('NFC')
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .replace(/[<>:"/\\|?*]/g, '-')
+    .replace(/[. ]+$/g, '')
+    .trim();
+  const bounded = [...(clean || 'video')].slice(0, 180).join('');
+  return /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(bounded) ? `_${bounded}` : bounded;
+}
+
+/**
+ * Builds a subtitle download name from the original local file or remote
+ * video title. Local source extensions are replaced instead of appended.
+ */
+export function subtitleDownloadFilename(sourceName, outputExtension, stripSourceExtension = false) {
+  const source = String(sourceName || '').normalize('NFC');
+  const sourceExtension = stripSourceExtension ? extname(source) : '';
+  const baseName = sourceExtension ? source.slice(0, -sourceExtension.length) : source;
+  return `${safeDownloadBaseName(baseName)}${outputExtension}`;
+}
+
+/** Returns an ASCII fallback plus RFC 5987 UTF-8 name for browser downloads. */
+export function attachmentContentDisposition(filename) {
+  const extension = extname(filename);
+  const baseName = extension ? filename.slice(0, -extension.length) : filename;
+  const safeName = `${safeDownloadBaseName(baseName)}${extension}`;
+  const fallback = safeFilename(safeName).replace(/["\\]/g, '-');
+  const encoded = encodeURIComponent(safeName).replace(/['()*]/g, (character) => (
+    `%${character.charCodeAt(0).toString(16).toUpperCase()}`
+  ));
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+}
+
 const UPLOAD_TYPES = new Map([
   ['.mp4', new Set(['video/mp4'])],
   ['.m4v', new Set(['video/mp4', 'video/x-m4v'])],
@@ -267,6 +326,31 @@ const VIDEO_OUTPUTS = new Map([
   }]
 ]);
 
+// Subtitle outputs are text-only and intentionally limited to the two formats
+// supported by browsers and common desktop players. The client never sends a
+// file extension, MIME type, encoder name, or command-line argument.
+const SUBTITLE_OUTPUTS = new Map([
+  ['srt', { extension: '.srt', contentType: 'application/x-subrip; charset=utf-8', codec: 'srt' }],
+  ['vtt', { extension: '.vtt', contentType: 'text/vtt; charset=utf-8', codec: 'webvtt' }]
+]);
+
+// Speech-to-text uses a deliberately small allowlist. The browser selects a
+// stable profile identifier; only the server decides which remote model name
+// is passed to the isolated worker. Model files are cached locally.
+const TRANSCRIPTION_MODELS = new Map([
+  ['fast', { modelId: 'Xenova/whisper-tiny', label: 'Whisper Tiny' }],
+  ['balanced', { modelId: 'Xenova/whisper-base', label: 'Whisper Base' }]
+]);
+const TRANSCRIPTION_LANGUAGES = new Set(['auto', 'es', 'en', 'pt', 'fr', 'de', 'it']);
+
+/** Resolves the finite subtitle format and rejects arbitrary extensions. */
+function normalizeSubtitleOutput(formatValue) {
+  const outputFormat = String(formatValue || 'srt').trim().toLowerCase();
+  const output = SUBTITLE_OUTPUTS.get(outputFormat);
+  if (!output) throw httpError('Selecciona un formato de subtítulos SRT o WebVTT.');
+  return { outputFormat, output };
+}
+
 /** Resolves an allowlisted video container/codec combination. */
 function normalizeVideoOutputProfile(outputFormatValue, videoCodecValue, audioCodecValue) {
   const outputFormat = String(outputFormatValue || 'mp4').trim().toLowerCase();
@@ -281,6 +365,33 @@ function normalizeVideoOutputProfile(outputFormatValue, videoCodecValue, audioCo
     throw httpError('El códec de audio no es compatible con el formato de video seleccionado.');
   }
   return { outputFormat, output, videoCodec, audioCodec };
+}
+
+/** Resolves a finite audio container/codec/bitrate profile. */
+function normalizeAudioOutputProfile(outputFormatValue, audioCodecValue, bitrateValue) {
+  const outputFormat = String(outputFormatValue || '').trim().toLowerCase();
+  const output = AUDIO_OUTPUTS.get(outputFormat);
+  if (!output) throw httpError('Selecciona un formato de salida MP3, M4A, OGG, Opus, FLAC o WAV.');
+  const audioCodec = String(audioCodecValue || output.defaultCodec).trim().toLowerCase();
+  if (!output.codecs.has(audioCodec)) {
+    throw httpError('El códec de audio no es compatible con el formato seleccionado.');
+  }
+  const lossless = new Set(['wav', 'flac']).has(outputFormat);
+  const requestedBitrate = Number(bitrateValue);
+  const bitrate = lossless
+    ? null
+    : (AUDIO_BITRATES.has(requestedBitrate) ? requestedBitrate : 192);
+  return { outputFormat, output, audioCodec, bitrate, lossless };
+}
+
+/** Estimates bounded output storage for an allowlisted audio profile. */
+function estimatedAudioOutputSize(duration, profile) {
+  const estimatedBytesPerSecond = profile.outputFormat === 'wav'
+    ? 192_000
+    : profile.outputFormat === 'flac'
+      ? 120_000
+      : Math.ceil(profile.bitrate * 1000 / 8 * 1.05);
+  return Math.max(1, Math.ceil(duration * estimatedBytesPerSecond));
 }
 
 /** Crea un error HTTP conservando un mensaje seguro para el navegador. */
@@ -313,7 +424,7 @@ export function normalizeUploadMetadata(input) {
     throw httpError('El tipo del archivo no coincide con su extensión.');
   }
   const contentLength = Number(input.contentLength);
-  if (!Number.isInteger(contentLength) || contentLength < 1) {
+  if (!Number.isSafeInteger(contentLength) || contentLength < 1) {
     throw httpError('No fue posible determinar el tamaño del archivo.');
   }
   if (contentLength > MAX_UPLOAD_BYTES) {
@@ -352,6 +463,120 @@ export function normalizeUploadMetadata(input) {
 }
 
 /**
+ * Validates a local video source whose selected range will become audio only.
+ * Source validation remains identical to the video editor, while the output
+ * extension, MIME type, codec, bitrate, and size estimate come exclusively
+ * from the finite audio profile table.
+ */
+export function normalizeVideoAudioExtractionMetadata(input) {
+  const source = normalizeUploadMetadata({
+    ...input,
+    outputFormat: 'mp4',
+    videoCodec: 'h264',
+    audioCodec: 'aac'
+  });
+  const profile = normalizeAudioOutputProfile(input.outputFormat, input.audioCodec, input.bitrate);
+  return {
+    ...source,
+    estimatedSize: estimatedAudioOutputSize(source.clip.duration, profile),
+    outputFormat: profile.outputFormat,
+    outputExtension: profile.output.extension,
+    outputContentType: profile.output.contentType,
+    videoCodec: null,
+    audioCodec: profile.audioCodec,
+    bitrate: profile.bitrate
+  };
+}
+
+/**
+ * Validates a local video whose embedded subtitle stream will become SRT/VTT.
+ * The stream index is an ordinal within subtitle streams, never a raw FFmpeg
+ * map expression, and remains bounded to prevent argument injection.
+ */
+export function normalizeSubtitleUploadMetadata(input) {
+  const source = normalizeUploadMetadata({
+    ...input,
+    outputFormat: 'mp4',
+    videoCodec: 'h264',
+    audioCodec: 'aac'
+  });
+  const profile = normalizeSubtitleOutput(input.subtitleFormat);
+  const trackIndex = Number(input.trackIndex ?? 0);
+  if (!Number.isInteger(trackIndex) || trackIndex < 0 || trackIndex > 31) {
+    throw httpError('Selecciona una pista de subtítulos válida.');
+  }
+  return {
+    ...source,
+    trackIndex,
+    estimatedSize: Math.max(1_024, Math.min(8 * 1024 ** 2, Math.ceil(source.clip.duration * 250))),
+    outputFormat: profile.outputFormat,
+    outputExtension: profile.output.extension,
+    outputContentType: profile.output.contentType,
+    videoCodec: null,
+    audioCodec: null
+  };
+}
+
+/**
+ * Validates the source shared by local video/audio speech-to-text requests.
+ * Existing-track extraction remains video-only; only Whisper generation may
+ * use the finite audio input allowlist already supported by the audio editor.
+ */
+function normalizeTranscriptionSourceMetadata(input) {
+  let decodedName = '';
+  try { decodedName = decodeURIComponent(String(input.fileName || '')).trim(); } catch {
+    // Delegate malformed-name reporting to the established video validator.
+    return normalizeUploadMetadata({
+      ...input, outputFormat: 'mp4', videoCodec: 'h264', audioCodec: 'aac'
+    });
+  }
+  const extension = extname(decodedName).toLowerCase();
+  if (UPLOAD_TYPES.has(extension)) {
+    return normalizeUploadMetadata({
+      ...input, outputFormat: 'mp4', videoCodec: 'h264', audioCodec: 'aac'
+    });
+  }
+  if (AUDIO_UPLOAD_TYPES.has(extension)) {
+    return normalizeAudioUploadMetadata({
+      ...input, outputFormat: 'wav', audioCodec: 'pcm-s16le'
+    });
+  }
+  throw httpError('Solo se admiten videos MP4, M4V, MOV o WebM, o audios MP3, M4A, AAC, WAV, FLAC, OGG u Opus.');
+}
+
+/**
+ * Validates a local-media speech-to-text request. The selected profile and
+ * language come from finite allowlists and the accepted clip duration is
+ * bounded separately because inference is much heavier than media copying.
+ */
+export function normalizeTranscriptionUploadMetadata(input) {
+  if (!TRANSCRIPTION_ENABLED) throw httpError('La transcripción local está desactivada en este servidor.', 503);
+  const source = normalizeTranscriptionSourceMetadata(input);
+  if (source.clip.duration > MAX_TRANSCRIPTION_MINUTES * 60) {
+    throw httpError(`El intervalo para transcribir no puede superar ${MAX_TRANSCRIPTION_MINUTES} minutos.`);
+  }
+  const profile = normalizeSubtitleOutput(input.subtitleFormat);
+  const language = String(input.language || 'auto').trim().toLowerCase();
+  if (!TRANSCRIPTION_LANGUAGES.has(language)) throw httpError('Selecciona un idioma de transcripción válido.');
+  const modelProfile = String(input.modelProfile || 'fast').trim().toLowerCase();
+  const model = TRANSCRIPTION_MODELS.get(modelProfile);
+  if (!model) throw httpError('Selecciona una precisión de transcripción válida.');
+  return {
+    ...source,
+    language,
+    modelProfile,
+    modelId: model.modelId,
+    estimatedSize: Math.max(1_024, Math.min(16 * 1024 ** 2, Math.ceil(source.clip.duration * 400))),
+    workingSize: Math.ceil(source.clip.duration * 32_000),
+    outputFormat: profile.outputFormat,
+    outputExtension: profile.output.extension,
+    outputContentType: profile.output.contentType,
+    videoCodec: null,
+    audioCodec: null
+  };
+}
+
+/**
  * Validates a local audio source and its requested output encoding.
  *
  * @param {object} input Name, MIME, bytes, duration, range, format and bitrate.
@@ -373,7 +598,7 @@ export function normalizeAudioUploadMetadata(input) {
     throw httpError('El tipo del audio no coincide con su extensión.');
   }
   const contentLength = Number(input.contentLength);
-  if (!Number.isInteger(contentLength) || contentLength < 1) {
+  if (!Number.isSafeInteger(contentLength) || contentLength < 1) {
     throw httpError('No fue posible determinar el tamaño del audio.');
   }
   if (contentLength > MAX_UPLOAD_BYTES) {
@@ -387,23 +612,7 @@ export function normalizeAudioUploadMetadata(input) {
   if (!clip || clip.end > duration + 0.25) {
     throw httpError('El intervalo seleccionado supera la duración del audio.');
   }
-  const outputFormat = String(input.outputFormat || '').trim().toLowerCase();
-  const output = AUDIO_OUTPUTS.get(outputFormat);
-  if (!output) throw httpError('Selecciona un formato de salida MP3, M4A, OGG, Opus, FLAC o WAV.');
-  const audioCodec = String(input.audioCodec || output.defaultCodec).trim().toLowerCase();
-  if (!output.codecs.has(audioCodec)) {
-    throw httpError('El códec de audio no es compatible con el formato seleccionado.');
-  }
-  const requestedBitrate = Number(input.bitrate);
-  const lossless = new Set(['wav', 'flac']).has(outputFormat);
-  const bitrate = lossless
-    ? null
-    : (AUDIO_BITRATES.has(requestedBitrate) ? requestedBitrate : 192);
-  const estimatedBytesPerSecond = outputFormat === 'wav'
-    ? 192_000
-    : outputFormat === 'flac'
-      ? 120_000
-      : Math.ceil(bitrate * 1000 / 8 * 1.05);
+  const profile = normalizeAudioOutputProfile(input.outputFormat, input.audioCodec, input.bitrate);
   const titleWithoutExtension = fileName.slice(0, Math.max(0, fileName.length - extension.length));
   return {
     fileName,
@@ -413,12 +622,12 @@ export function normalizeAudioUploadMetadata(input) {
     contentLength,
     duration,
     clip,
-    estimatedSize: Math.max(1, Math.ceil(clip.duration * estimatedBytesPerSecond)),
-    outputFormat,
-    outputExtension: output.extension,
-    outputContentType: output.contentType,
-    audioCodec,
-    bitrate
+    estimatedSize: estimatedAudioOutputSize(clip.duration, profile),
+    outputFormat: profile.outputFormat,
+    outputExtension: profile.output.extension,
+    outputContentType: profile.output.contentType,
+    audioCodec: profile.audioCodec,
+    bitrate: profile.bitrate
   };
 }
 
@@ -434,6 +643,9 @@ function uploadSourcePath(id, sourceFilename) {
 
 /** Resolves a safe persisted output extension; legacy and remote jobs are MP4. */
 function outputExtensionForJob(job) {
+  if (job?.mediaKind === 'subtitle' && SUBTITLE_OUTPUTS.has(job.outputFormat)) {
+    return SUBTITLE_OUTPUTS.get(job.outputFormat).extension;
+  }
   if (job?.mediaKind === 'audio' && AUDIO_OUTPUTS.has(job.outputFormat)) {
     return AUDIO_OUTPUTS.get(job.outputFormat).extension;
   }
@@ -485,6 +697,9 @@ export function createOpaqueAnalysis(video, ownerId = 'local') {
       type: quality.type,
       label: quality.label,
       estimatedSize: Number(quality.estimatedSize) || null,
+      mediaKind: 'video',
+      youtubeFormatId: typeof quality.formatId === 'string' ? quality.formatId : null,
+      youtubeAudioFormatId: typeof quality.audioFormatId === 'string' ? quality.audioFormatId : null,
       providerId,
       sourceUrl: video.sourceUrl,
       title: video.title,
@@ -501,7 +716,64 @@ export function createOpaqueAnalysis(video, ownerId = 'local') {
       ...(Number(quality.estimatedSize) > 0 ? { estimatedSize: Number(quality.estimatedSize) } : {})
     };
   });
-  return { ...video, qualities: publicQualities };
+  let publicAudio = null;
+  if (video.provider === 'youtube' && video.audioTrack) {
+    if (providerForMediaUrl(video.audioTrack.url)?.id !== 'youtube') {
+      throw new Error('YouTube devolvió un audio no autorizado.');
+    }
+    const selectionId = randomUUID();
+    mediaSelections.set(selectionId, {
+      url: video.audioTrack.url,
+      audioUrl: null,
+      type: video.audioTrack.type || 'mp4',
+      label: 'audio',
+      estimatedSize: Number(video.audioTrack.estimatedSize) || null,
+      mediaKind: 'audio',
+      youtubeFormatId: typeof video.audioTrack.formatId === 'string' ? video.audioTrack.formatId : null,
+      youtubeAudioFormatId: null,
+      providerId: 'youtube',
+      sourceUrl: video.sourceUrl,
+      title: video.title,
+      duration: video.duration,
+      ownerId,
+      expiresAt
+    });
+    publicAudio = {
+      selectionId,
+      ...(Number(video.audioTrack.estimatedSize) > 0
+        ? { estimatedSize: Number(video.audioTrack.estimatedSize) }
+        : {})
+    };
+  }
+  const publicSubtitleTracks = video.provider === 'youtube'
+    ? (Array.isArray(video.subtitleTracks) ? video.subtitleTracks : []).flatMap((track) => {
+      const language = String(track?.language || '').trim();
+      if (!/^[a-z0-9_-]{1,35}$/i.test(language)) return [];
+      const selectionId = randomUUID();
+      const name = String(track?.name || language).replace(/[\u0000-\u001f]/g, '').trim().slice(0, 80) || language;
+      subtitleSelections.set(selectionId, {
+        sourceUrl: video.sourceUrl,
+        providerId: video.provider,
+        title: String(video.title || 'video'),
+        duration: Number(video.duration) || null,
+        language,
+        name,
+        automatic: Boolean(track.automatic),
+        ownerId,
+        expiresAt: Date.now() + SUBTITLE_SELECTION_TTL_MS
+      });
+      return [{ selectionId, language, name, automatic: Boolean(track.automatic) }];
+    })
+    : [];
+  // Internal format IDs and signed audio URLs stay in server memory. Only an
+  // opaque selection capability reaches the browser.
+  const { audioTrack: _audioTrack, ...publicVideo } = video;
+  return {
+    ...publicVideo,
+    qualities: publicQualities,
+    subtitleTracks: publicSubtitleTracks,
+    ...(publicAudio ? { audio: publicAudio } : {})
+  };
 }
 
 /** Recupera una calidad analizada sin aceptar URL, título o proveedor del cliente. */
@@ -513,6 +785,19 @@ function resolveMediaSelection(id, ownerId = 'local') {
   }
   if (selection.ownerId && selection.ownerId !== ownerId) {
     throw httpError('La selección no pertenece a este usuario.', 403);
+  }
+  return selection;
+}
+
+/** Resolves a caption track without ever accepting its provider URL. */
+function resolveSubtitleSelection(id, ownerId = 'local') {
+  const selection = subtitleSelections.get(id);
+  if (!selection || selection.expiresAt <= Date.now()) {
+    if (selection) subtitleSelections.delete(id);
+    throw new Error('La selección de subtítulos caducó. Analiza nuevamente el video.');
+  }
+  if (selection.ownerId && selection.ownerId !== ownerId) {
+    throw httpError('La selección de subtítulos no pertenece a este usuario.', 403);
   }
   return selection;
 }
@@ -774,6 +1059,45 @@ function accessProfileForRequest(req) {
   return profile ? { id: profile.id, role: profile.role, maxActiveJobs: profile.maxActiveJobs } : null;
 }
 
+/** Returns the cookie name dedicated to one job's download path. */
+function downloadGrantCookieName(jobId) {
+  return `vdownloader_download_${String(jobId).replace(/-/g, '')}`;
+}
+
+/** Reads one cookie without decoding arbitrary user-controlled values. */
+function requestCookie(req, name) {
+  const prefix = `${name}=`;
+  for (const part of String(req.headers.cookie || '').split(';')) {
+    const value = part.trim();
+    if (value.startsWith(prefix)) return value.slice(prefix.length);
+  }
+  return '';
+}
+
+/**
+ * Resolves a temporary download capability. It is valid only for the job
+ * encoded in the cookie name and grant record; it never authorizes another API.
+ */
+function downloadGrantProfileForRequest(req, jobId) {
+  const grantId = requestCookie(req, downloadGrantCookieName(jobId));
+  if (!/^[a-f0-9-]{36}$/i.test(grantId)) return null;
+  const grant = downloadGrants.get(grantId);
+  if (!grant) return null;
+  if (grant.expiresAt <= Date.now()) {
+    downloadGrants.delete(grantId);
+    return null;
+  }
+  if (grant.jobId !== jobId) return null;
+  return { ...grant.profile };
+}
+
+/** Removes every in-memory download capability for a deleted or expired job. */
+function revokeDownloadGrantsForJob(jobId) {
+  for (const [grantId, grant] of downloadGrants) {
+    if (grant.jobId === jobId) downloadGrants.delete(grantId);
+  }
+}
+
 /** Applies per-address request budgets and a stricter failed-authentication budget. */
 function allowRequest(req, administrative = false) {
   const now = Date.now();
@@ -885,10 +1209,13 @@ async function health(req, res) {
       dependencies: dependencyStatus,
       queue: { active: activeJobs, queued: jobQueue.length, maxConcurrent: MAX_CONCURRENT_JOBS },
       retention: { ttlMinutes: JOB_TTL_MINUTES, storageLimitBytes: MAX_STORAGE_BYTES },
-      uploads: { enabled: true, maxBytes: MAX_UPLOAD_BYTES, formats: [...UPLOAD_TYPES.keys()] },
+      uploads: { enabled: true, limitEnabled: uploadSettings.limitEnabled, maxBytes: uploadSettings.maxBytes, effectiveMaxBytes: MAX_UPLOAD_BYTES, requestTimeoutMs: uploadSettings.requestTimeoutMs, formats: [...UPLOAD_TYPES.keys()] },
       audioTools: {
         enabled: true,
-        maxBytes: MAX_UPLOAD_BYTES,
+        remoteProviders: ['youtube'],
+        limitEnabled: uploadSettings.limitEnabled,
+        maxBytes: uploadSettings.maxBytes,
+        effectiveMaxBytes: MAX_UPLOAD_BYTES,
         inputFormats: [...AUDIO_UPLOAD_TYPES.keys()],
         outputFormats: [...AUDIO_OUTPUTS.entries()].map(([format, profile]) => ({
           format,
@@ -903,7 +1230,29 @@ async function health(req, res) {
             codec,
             audioCodecs: [...audioCodecs]
           }))
+        })),
+        audioExtractionFormats: [...AUDIO_OUTPUTS.entries()].map(([format, profile]) => ({
+          format,
+          codecs: [...profile.codecs]
         }))
+      },
+      subtitleTools: {
+        enabled: true,
+        remoteProviders: ['youtube'],
+        localInputs: [...UPLOAD_TYPES.keys()],
+        outputFormats: [...SUBTITLE_OUTPUTS.keys()],
+        automaticTranscription: {
+          enabled: TRANSCRIPTION_ENABLED,
+          engine: 'Transformers.js / Whisper',
+          local: true,
+          localInputs: [...UPLOAD_TYPES.keys(), ...AUDIO_UPLOAD_TYPES.keys()],
+          maxMinutes: MAX_TRANSCRIPTION_MINUTES,
+          modelDownloadEnabled: TRANSCRIPTION_ALLOW_MODEL_DOWNLOAD,
+          models: [...TRANSCRIPTION_MODELS.entries()].map(([profile, model]) => ({
+            profile,
+            label: model.label
+          }))
+        }
       },
       identityProtection: { enabled: true, method: 'pixelate', maxSamples: 900 },
       administration: {
@@ -1006,6 +1355,9 @@ async function createJob(req, res) {
     if (!/^[a-f0-9-]{36}$/i.test(body.selectionId || '')) throw new Error('La selección de calidad no es válida.');
     const ownerId = req.auth?.id || 'local';
     const selection = resolveMediaSelection(body.selectionId, ownerId);
+    if (selection.mediaKind === 'audio') {
+      throw new Error('Usa la opción Solo audio para esta selección de YouTube.');
+    }
     const mediaUrl = selection.url;
     const audioUrl = selection.audioUrl;
     const { url: sourceUrl, provider } = normalizeSourceUrl(selection.sourceUrl);
@@ -1032,6 +1384,9 @@ async function createJob(req, res) {
     const filename = `${title}-${quality}${clipSuffix}.mp4`;
     const job = {
       id, mediaUrl, audioUrl, sourceUrl: sourceUrl.href, providerId: provider.id, type, clip, expectedDuration, estimatedSize, title, quality, filename,
+      sourceType: 'remote', mediaKind: 'video',
+      youtubeFormatId: selection.youtubeFormatId || null,
+      youtubeAudioFormatId: selection.youtubeAudioFormatId || null,
       ownerId,
       outputPath: join(JOB_DIR, `${id}.mp4`),
       status: 'queued', progress: 0, size: null, error: null,
@@ -1050,6 +1405,107 @@ async function createJob(req, res) {
   } catch (error) {
     logEvent('warn', 'job_creation_failed', { message: error.message || 'Error desconocido' });
     json(res, Number(error.statusCode) || 400, { error: error.message || 'No fue posible crear la tarea.' });
+  }
+}
+
+/**
+ * Queues an audio-only export from an opaque YouTube audio selection.
+ * The browser chooses only a finite output profile; the source URL and yt-dlp
+ * format ID remain server-owned and are refreshed from the public page.
+ */
+async function createRemoteAudioJob(req, res) {
+  try {
+    assertOwnerJobCapacity(req);
+    if (req.headers['x-vdownloader-audio-extract'] !== '1') {
+      throw httpError('La extracción de audio no está autorizada desde este origen.', 403);
+    }
+    const body = await readJson(req);
+    if (!/^[a-f0-9-]{36}$/i.test(body.selectionId || '')) {
+      throw new Error('La selección de audio no es válida.');
+    }
+    const ownerId = req.auth?.id || 'local';
+    const selection = resolveMediaSelection(body.selectionId, ownerId);
+    if (selection.mediaKind !== 'audio' || selection.providerId !== 'youtube') {
+      throw new Error('La selección no corresponde a un audio de YouTube.');
+    }
+    const { url: sourceUrl, provider } = normalizeSourceUrl(selection.sourceUrl);
+    if (provider.id !== 'youtube' || providerForMediaUrl(selection.url)?.id !== 'youtube') {
+      throw new Error('La selección no corresponde al proveedor indicado.');
+    }
+    const profile = normalizeAudioOutputProfile(body.outputFormat, body.audioCodec, body.bitrate);
+    const clip = normalizeClipRange(body.start, body.end);
+    const totalDuration = Number(selection.duration);
+    const expectedDuration = clip?.duration || totalDuration;
+    if (!Number.isFinite(expectedDuration) || expectedDuration < 1 || expectedDuration > 43_200) {
+      throw new Error('No se pudo determinar una duración válida para preparar el audio.');
+    }
+    if (clip && (!Number.isFinite(totalDuration) || clip.end > totalDuration + 0.25)) {
+      throw new Error('El intervalo seleccionado supera la duración del video.');
+    }
+    const estimatedSize = estimatedAudioOutputSize(expectedDuration, profile);
+    if (estimatedSize > MAX_STORAGE_BYTES) {
+      throw new Error('El audio estimado supera el límite total de almacenamiento configurado.');
+    }
+    await ensureStorageCapacity(estimatedSize);
+    await mkdir(JOB_DIR, { recursive: true });
+
+    const id = randomUUID();
+    const title = safeFilename(selection.title || 'audio');
+    const clipSuffix = clip ? `-${formatSecondsForFilename(clip.start)}-${formatSecondsForFilename(clip.end)}` : '';
+    const bitrateLabel = profile.bitrate ? ` · ${profile.bitrate} kbps` : '';
+    const job = {
+      id,
+      ownerId,
+      sourceType: 'remote',
+      mediaKind: 'audio',
+      sourceUrl: sourceUrl.href,
+      sourceFilename: null,
+      sourceSize: 0,
+      mediaUrl: selection.url,
+      audioUrl: null,
+      providerId: 'youtube',
+      type: selection.type || 'mp4',
+      clip,
+      identityProtection: null,
+      expectedDuration,
+      estimatedSize,
+      title,
+      quality: `${profile.outputFormat.toUpperCase()} / ${profile.audioCodec.toUpperCase()}${bitrateLabel}`,
+      outputFormat: profile.outputFormat,
+      outputContentType: profile.output.contentType,
+      videoCodec: null,
+      audioCodec: profile.audioCodec,
+      audioBitrate: profile.bitrate,
+      youtubeFormatId: selection.youtubeFormatId || null,
+      youtubeAudioFormatId: null,
+      filename: `${title}${clipSuffix}${profile.output.extension}`,
+      outputPath: join(JOB_DIR, `${id}${profile.output.extension}`),
+      status: 'queued',
+      progress: 0,
+      size: null,
+      error: null,
+      attempts: 0,
+      maxRetries: MAX_JOB_RETRIES,
+      etaSeconds: null,
+      createdAt: Date.now(),
+      startedAt: null,
+      completedAt: null,
+      restartCount: 0,
+      lastRestartedAt: null,
+      process: null,
+      cancelRequested: false,
+      restartRequested: false,
+      events: []
+    };
+    appendJobEvent(job, 'created');
+    jobs.set(id, job);
+    jobQueue.push(id);
+    schedulePersist();
+    processJobQueue();
+    json(res, 202, publicJob(job));
+  } catch (error) {
+    logEvent('warn', 'remote_audio_job_creation_failed', { message: error.message || 'Error desconocido' });
+    json(res, Number(error.statusCode) || 400, { error: error.message || 'No fue posible crear la tarea de audio.' });
   }
 }
 
@@ -1168,6 +1624,353 @@ async function createUploadJob(req, res) {
     if (!req.complete && !req.destroyed) req.resume();
     logEvent('warn', 'upload_job_creation_failed', { message: error.message || 'Error desconocido' });
     json(res, Number(error.statusCode) || 400, { error: error.message || 'No fue posible cargar el archivo.' });
+  }
+}
+
+/**
+ * Receives a local video and queues audio-only extraction/transcoding.
+ * Both upload and extraction control headers are required so this route keeps
+ * the local-upload contract and cannot be triggered by a simple cross-origin
+ * form request. FFmpeg arguments are derived only from allowlisted profiles.
+ */
+async function createVideoAudioExtractionJob(req, res) {
+  let sourcePath = null;
+  try {
+    assertOwnerJobCapacity(req);
+    if (req.headers['x-vdownloader-upload'] !== '1'
+      || req.headers['x-vdownloader-audio-extract'] !== '1') {
+      throw httpError('La extracción de audio no está autorizada desde este origen.', 403);
+    }
+    const metadata = normalizeVideoAudioExtractionMetadata({
+      fileName: req.headers['x-upload-name'],
+      contentType: req.headers['content-type'],
+      contentLength: req.headers['content-length'],
+      duration: req.headers['x-upload-duration'],
+      start: req.headers['x-upload-start'],
+      end: req.headers['x-upload-end'],
+      outputFormat: req.headers['x-audio-format'],
+      audioCodec: req.headers['x-audio-codec'],
+      bitrate: req.headers['x-audio-bitrate']
+    });
+    await ensureStorageCapacity(metadata.contentLength + metadata.estimatedSize);
+    await mkdir(JOB_DIR, { recursive: true });
+
+    const id = randomUUID();
+    const sourceFilename = `${id}.source${metadata.extension}`;
+    sourcePath = join(JOB_DIR, sourceFilename);
+    const sourceSize = await writeUploadFile(req, sourcePath, metadata.contentLength);
+    const clipSuffix = `-${formatSecondsForFilename(metadata.clip.start)}-${formatSecondsForFilename(metadata.clip.end)}`;
+    const bitrateLabel = metadata.bitrate ? ` · ${metadata.bitrate} kbps` : '';
+    const job = {
+      id,
+      ownerId: req.auth?.id || 'local',
+      sourceType: 'upload',
+      mediaKind: 'audio',
+      sourceUrl: null,
+      sourceFilename,
+      sourceSize,
+      mediaUrl: sourcePath,
+      audioUrl: null,
+      providerId: 'audio',
+      type: 'file',
+      clip: metadata.clip,
+      identityProtection: null,
+      expectedDuration: metadata.clip.duration,
+      estimatedSize: metadata.estimatedSize,
+      title: metadata.title,
+      quality: `${metadata.outputFormat.toUpperCase()} / ${metadata.audioCodec.toUpperCase()}${bitrateLabel}`,
+      outputFormat: metadata.outputFormat,
+      outputContentType: metadata.outputContentType,
+      videoCodec: null,
+      audioCodec: metadata.audioCodec,
+      audioBitrate: metadata.bitrate,
+      filename: `${metadata.title}-audio-extraido${clipSuffix}${metadata.outputExtension}`,
+      outputPath: join(JOB_DIR, `${id}${metadata.outputExtension}`),
+      status: 'queued',
+      progress: 0,
+      size: null,
+      error: null,
+      attempts: 0,
+      maxRetries: 0,
+      etaSeconds: null,
+      createdAt: Date.now(),
+      startedAt: null,
+      completedAt: null,
+      restartCount: 0,
+      lastRestartedAt: null,
+      process: null,
+      cancelRequested: false,
+      restartRequested: false,
+      events: []
+    };
+    appendJobEvent(job, 'created');
+    jobs.set(id, job);
+    jobQueue.push(id);
+    schedulePersist();
+    processJobQueue();
+    logEvent('info', 'video_audio_extraction_job_created', {
+      jobId: id,
+      sourceSize,
+      duration: metadata.clip.duration,
+      outputFormat: metadata.outputFormat,
+      audioCodec: metadata.audioCodec
+    });
+    json(res, 202, publicJob(job));
+  } catch (error) {
+    if (sourcePath) try { await unlink(sourcePath); } catch {}
+    if (!req.complete && !req.destroyed) req.resume();
+    logEvent('warn', 'video_audio_extraction_job_creation_failed', {
+      message: error.message || 'Error desconocido'
+    });
+    json(res, Number(error.statusCode) || 400, {
+      error: error.message || 'No fue posible extraer el audio del video.'
+    });
+  }
+}
+
+/** Creates a queued SRT/VTT export from one opaque YouTube caption track. */
+async function createRemoteSubtitleJob(req, res) {
+  try {
+    assertOwnerJobCapacity(req);
+    if (req.headers['x-vdownloader-subtitle'] !== '1') {
+      throw httpError('La exportación de subtítulos no está autorizada desde este origen.', 403);
+    }
+    const body = await readJson(req);
+    if (!/^[a-f0-9-]{36}$/i.test(body.selectionId || '')) {
+      throw httpError('La selección de subtítulos no es válida.');
+    }
+    const ownerId = req.auth?.id || 'local';
+    const selection = resolveSubtitleSelection(body.selectionId, ownerId);
+    const { url: sourceUrl, provider } = normalizeSourceUrl(selection.sourceUrl);
+    if (provider.id !== 'youtube' || provider.id !== selection.providerId) {
+      throw httpError('La pista de subtítulos no corresponde a un video compatible.');
+    }
+    const profile = normalizeSubtitleOutput(body.outputFormat);
+    const estimatedSize = 8 * 1024 ** 2;
+    await ensureStorageCapacity(estimatedSize);
+    await mkdir(JOB_DIR, { recursive: true });
+    const id = randomUUID();
+    const title = safeFilename(selection.title || 'video');
+    const language = selection.language;
+    const job = {
+      id,
+      ownerId,
+      sourceType: 'remote',
+      mediaKind: 'subtitle',
+      sourceUrl: sourceUrl.href,
+      sourceFilename: null,
+      sourceSize: 0,
+      mediaUrl: null,
+      audioUrl: null,
+      providerId: 'youtube',
+      type: 'subtitle',
+      clip: null,
+      identityProtection: null,
+      expectedDuration: Number(selection.duration) || 60,
+      estimatedSize,
+      title,
+      quality: `${selection.name} · ${selection.automatic ? 'automáticos' : 'publicados'} · ${profile.outputFormat.toUpperCase()}`,
+      outputFormat: profile.outputFormat,
+      outputContentType: profile.output.contentType,
+      videoCodec: null,
+      audioCodec: null,
+      subtitleLanguage: language,
+      subtitleName: selection.name,
+      subtitleAutomatic: selection.automatic,
+      subtitleTrackIndex: null,
+      filename: subtitleDownloadFilename(selection.title || 'video', profile.output.extension),
+      outputPath: join(JOB_DIR, `${id}${profile.output.extension}`),
+      status: 'queued', progress: 0, size: null, error: null,
+      attempts: 0, maxRetries: MAX_JOB_RETRIES, etaSeconds: null,
+      createdAt: Date.now(), startedAt: null, completedAt: null,
+      restartCount: 0, lastRestartedAt: null,
+      process: null, cancelRequested: false, restartRequested: false,
+      events: []
+    };
+    appendJobEvent(job, 'created');
+    jobs.set(id, job);
+    jobQueue.push(id);
+    schedulePersist();
+    processJobQueue();
+    logEvent('info', 'remote_subtitle_job_created', {
+      jobId: id, provider: 'youtube', language, automatic: selection.automatic, outputFormat: profile.outputFormat
+    });
+    json(res, 202, publicJob(job));
+  } catch (error) {
+    logEvent('warn', 'remote_subtitle_job_creation_failed', { message: error.message || 'Error desconocido' });
+    json(res, Number(error.statusCode) || 400, { error: error.message || 'No fue posible crear los subtítulos.' });
+  }
+}
+
+/** Receives a local video and queues extraction of one embedded subtitle track. */
+async function createLocalSubtitleJob(req, res) {
+  let sourcePath = null;
+  try {
+    assertOwnerJobCapacity(req);
+    if (req.headers['x-vdownloader-upload'] !== '1'
+      || req.headers['x-vdownloader-subtitle'] !== '1') {
+      throw httpError('La extracción local de subtítulos no está autorizada desde este origen.', 403);
+    }
+    const metadata = normalizeSubtitleUploadMetadata({
+      fileName: req.headers['x-upload-name'],
+      contentType: req.headers['content-type'],
+      contentLength: req.headers['content-length'],
+      duration: req.headers['x-upload-duration'],
+      start: req.headers['x-upload-start'],
+      end: req.headers['x-upload-end'],
+      subtitleFormat: req.headers['x-subtitle-format'],
+      trackIndex: req.headers['x-subtitle-track']
+    });
+    await ensureStorageCapacity(metadata.contentLength + metadata.estimatedSize);
+    await mkdir(JOB_DIR, { recursive: true });
+    const id = randomUUID();
+    const sourceFilename = `${id}.source${metadata.extension}`;
+    sourcePath = join(JOB_DIR, sourceFilename);
+    const sourceSize = await writeUploadFile(req, sourcePath, metadata.contentLength);
+    const job = {
+      id,
+      ownerId: req.auth?.id || 'local',
+      sourceType: 'upload',
+      mediaKind: 'subtitle',
+      sourceUrl: null,
+      sourceFilename,
+      sourceSize,
+      mediaUrl: sourcePath,
+      audioUrl: null,
+      providerId: 'subtitle',
+      type: 'file',
+      clip: metadata.clip,
+      identityProtection: null,
+      expectedDuration: metadata.clip.duration,
+      estimatedSize: metadata.estimatedSize,
+      title: metadata.title,
+      quality: `Pista ${metadata.trackIndex + 1} · ${metadata.outputFormat.toUpperCase()}`,
+      outputFormat: metadata.outputFormat,
+      outputContentType: metadata.outputContentType,
+      videoCodec: null,
+      audioCodec: null,
+      subtitleLanguage: null,
+      subtitleName: null,
+      subtitleAutomatic: false,
+      subtitleTrackIndex: metadata.trackIndex,
+      filename: subtitleDownloadFilename(metadata.fileName, metadata.outputExtension, true),
+      outputPath: join(JOB_DIR, `${id}${metadata.outputExtension}`),
+      status: 'queued', progress: 0, size: null, error: null,
+      attempts: 0, maxRetries: 0, etaSeconds: null,
+      createdAt: Date.now(), startedAt: null, completedAt: null,
+      restartCount: 0, lastRestartedAt: null,
+      process: null, cancelRequested: false, restartRequested: false,
+      events: []
+    };
+    appendJobEvent(job, 'created');
+    jobs.set(id, job);
+    jobQueue.push(id);
+    schedulePersist();
+    processJobQueue();
+    logEvent('info', 'local_subtitle_job_created', {
+      jobId: id, sourceSize, trackIndex: metadata.trackIndex, outputFormat: metadata.outputFormat
+    });
+    json(res, 202, publicJob(job));
+  } catch (error) {
+    if (sourcePath) try { await unlink(sourcePath); } catch {}
+    if (!req.complete && !req.destroyed) req.resume();
+    logEvent('warn', 'local_subtitle_job_creation_failed', { message: error.message || 'Error desconocido' });
+    json(res, Number(error.statusCode) || 400, { error: error.message || 'No fue posible extraer los subtítulos.' });
+  }
+}
+
+/**
+ * Receives local video or audio and queues local speech-to-text generation. The
+ * uploaded source stays in the same protected job area as other local tools;
+ * only model artifacts are fetched, while the audio itself never leaves the
+ * machine running vDownloader.
+ */
+async function createTranscriptionJob(req, res) {
+  let sourcePath = null;
+  try {
+    assertOwnerJobCapacity(req);
+    if (req.headers['x-vdownloader-upload'] !== '1'
+      || req.headers['x-vdownloader-subtitle'] !== '1'
+      || req.headers['x-vdownloader-transcription'] !== '1') {
+      throw httpError('La generación local de subtítulos no está autorizada desde este origen.', 403);
+    }
+    const metadata = normalizeTranscriptionUploadMetadata({
+      fileName: req.headers['x-upload-name'],
+      contentType: req.headers['content-type'],
+      contentLength: req.headers['content-length'],
+      duration: req.headers['x-upload-duration'],
+      start: req.headers['x-upload-start'],
+      end: req.headers['x-upload-end'],
+      subtitleFormat: req.headers['x-subtitle-format'],
+      language: req.headers['x-transcription-language'],
+      modelProfile: req.headers['x-transcription-model']
+    });
+    await ensureStorageCapacity(metadata.contentLength + metadata.estimatedSize + metadata.workingSize);
+    await mkdir(JOB_DIR, { recursive: true });
+    const id = randomUUID();
+    const sourceFilename = `${id}.source${metadata.extension}`;
+    sourcePath = join(JOB_DIR, sourceFilename);
+    const sourceSize = await writeUploadFile(req, sourcePath, metadata.contentLength);
+    const languageSuffix = metadata.language === 'auto' ? 'auto' : metadata.language;
+    const model = TRANSCRIPTION_MODELS.get(metadata.modelProfile);
+    const job = {
+      id,
+      ownerId: req.auth?.id || 'local',
+      sourceType: 'upload',
+      mediaKind: 'subtitle',
+      sourceUrl: null,
+      sourceFilename,
+      sourceSize,
+      mediaUrl: sourcePath,
+      audioUrl: null,
+      providerId: 'transcription',
+      type: 'file',
+      clip: metadata.clip,
+      identityProtection: null,
+      expectedDuration: metadata.clip.duration,
+      estimatedSize: metadata.estimatedSize,
+      title: metadata.title,
+      quality: `${model.label} · ${languageSuffix.toUpperCase()} · ${metadata.outputFormat.toUpperCase()}`,
+      outputFormat: metadata.outputFormat,
+      outputContentType: metadata.outputContentType,
+      videoCodec: null,
+      audioCodec: null,
+      subtitleLanguage: metadata.language,
+      subtitleName: 'Generated from audio',
+      subtitleAutomatic: true,
+      subtitleTrackIndex: null,
+      subtitleGenerated: true,
+      transcriptionModelProfile: metadata.modelProfile,
+      transcriptionModelId: metadata.modelId,
+      filename: subtitleDownloadFilename(metadata.fileName, metadata.outputExtension, true),
+      outputPath: join(JOB_DIR, `${id}${metadata.outputExtension}`),
+      status: 'queued', progress: 0, size: null, error: null,
+      attempts: 0, maxRetries: 0, etaSeconds: null,
+      createdAt: Date.now(), startedAt: null, completedAt: null,
+      restartCount: 0, lastRestartedAt: null,
+      process: null, cancelRequested: false, restartRequested: false,
+      events: []
+    };
+    appendJobEvent(job, 'created');
+    jobs.set(id, job);
+    jobQueue.push(id);
+    schedulePersist();
+    processJobQueue();
+    logEvent('info', 'transcription_job_created', {
+      jobId: id,
+      sourceSize,
+      duration: metadata.clip.duration,
+      sourceExtension: metadata.extension,
+      language: metadata.language,
+      modelProfile: metadata.modelProfile,
+      outputFormat: metadata.outputFormat
+    });
+    json(res, 202, publicJob(job));
+  } catch (error) {
+    if (sourcePath) try { await unlink(sourcePath); } catch {}
+    if (!req.complete && !req.destroyed) req.resume();
+    logEvent('warn', 'transcription_job_creation_failed', { message: error.message || 'Error desconocido' });
+    json(res, Number(error.statusCode) || 400, { error: error.message || 'No fue posible generar los subtítulos.' });
   }
 }
 
@@ -1347,7 +2150,7 @@ async function createAudioJoinJob(req, res) {
       throw httpError('El tipo de la carga conjunta no es válido.');
     }
     const contentLength = Number(req.headers['content-length']);
-    if (!Number.isInteger(contentLength) || contentLength < 6) {
+    if (!Number.isSafeInteger(contentLength) || contentLength < 6) {
       throw httpError('No fue posible determinar el tamaño de la carga conjunta.');
     }
     if (contentLength > MAX_UPLOAD_BYTES + MAX_AUDIO_JOIN_METADATA_BYTES + 4) {
@@ -1476,10 +2279,14 @@ async function createAudioJoinJob(req, res) {
 
 /** Elimina datos internos (URL firmada, ruta y proceso) antes de responder. */
 function publicJob(job, includeOwner = false) {
+  const stage = ['queued', 'downloading', 'processing', 'finalizing'].includes(job.stage)
+    ? job.stage
+    : (job.status === 'queued' ? 'queued' : job.status === 'ready' ? 'finalizing' : 'processing');
   return {
     id: job.id,
     status: job.status,
     progress: job.progress,
+    stage,
     filename: job.filename,
     provider: job.providerId,
     quality: job.quality,
@@ -1497,6 +2304,11 @@ function publicJob(job, includeOwner = false) {
     outputFormat: job.outputFormat || (job.mediaKind === 'audio' ? null : 'mp4'),
     videoCodec: job.videoCodec || null,
     audioCodec: job.audioCodec || null,
+    subtitleLanguage: job.subtitleLanguage || null,
+    subtitleAutomatic: Boolean(job.subtitleAutomatic),
+    subtitleTrackIndex: Number.isInteger(job.subtitleTrackIndex) ? job.subtitleTrackIndex : null,
+    subtitleGenerated: Boolean(job.subtitleGenerated),
+    transcriptionModelProfile: job.subtitleGenerated ? job.transcriptionModelProfile || null : null,
     downloadUrl: job.status === 'ready' ? `/api/jobs/${job.id}/download` : null,
     events: (job.events || []).map(({ at, type, attempt }) => ({ at, type, ...(attempt ? { attempt } : {}) })),
     ...(includeOwner ? { ownerId: job.ownerId || 'local' } : {})
@@ -1567,7 +2379,10 @@ async function cancelJob(req, res, id) {
 export function prepareJobForRestart(job, restartedAt = Date.now()) {
   job.mediaUrl = null;
   job.audioUrl = null;
+  job.youtubeFormatId = null;
+  job.youtubeAudioFormatId = null;
   job.status = 'queued';
+  job.stage = 'queued';
   job.progress = 0;
   job.size = null;
   job.error = null;
@@ -1748,6 +2563,7 @@ function processJobQueue() {
  */
 async function runJob(job) {
   job.status = 'processing';
+  job.stage = 'processing';
   job.startedAt = Date.now();
   job.error = null;
   appendJobEvent(job, 'processing');
@@ -1761,6 +2577,7 @@ async function runJob(job) {
     job.etaSeconds = null;
     if (attempt > 0 || job.needsRefresh) {
       job.status = 'retrying';
+      job.stage = 'queued';
       schedulePersist();
       if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, Math.min(8_000, 1_000 * (2 ** (attempt - 1)))));
       try {
@@ -1771,6 +2588,7 @@ async function runJob(job) {
         continue;
       }
       job.status = 'processing';
+      job.stage = 'processing';
     }
     if (job.cancelRequested) break;
     const result = await runJobAttempt(job);
@@ -1778,7 +2596,14 @@ async function runJob(job) {
     if (job.cancelRequested) break;
     if (result.code === 0) {
       try {
+        job.stage = 'finalizing';
+        schedulePersist();
         const info = await stat(job.outputPath);
+        if (info.size <= 0) {
+          await unlink(job.outputPath);
+          lastError = 'El archivo de salida está vacío.';
+          continue;
+        }
         if (info.size > MAX_STORAGE_BYTES) {
           await unlink(job.outputPath);
           job.status = 'error';
@@ -1812,7 +2637,7 @@ async function runJob(job) {
     try { await unlink(job.outputPath); } catch {}
   } else {
     job.status = 'error';
-    job.error = friendlyFfmpegError(lastError, job.attempts, job.sourceType, job.mediaKind);
+    job.error = friendlyFfmpegError(lastError, job.attempts, job.sourceType, job.mediaKind, job);
     appendJobEvent(job, 'failed', { attempt: job.attempts });
     logEvent('error', 'job_failed', { jobId: job.id, provider: job.providerId, attempts: job.attempts, message: job.error });
   }
@@ -1846,16 +2671,45 @@ async function refreshJobMedia(job) {
     job.mediaUrl = sourcePath;
     job.audioUrl = null;
     job.type = 'file';
-    job.providerId = job.mediaKind === 'audio' ? 'audio' : 'upload';
+    job.providerId = job.mediaKind === 'audio'
+      ? 'audio'
+      : job.mediaKind === 'subtitle'
+        ? (job.subtitleGenerated ? 'transcription' : 'subtitle')
+        : 'upload';
+    schedulePersist();
+    return;
+  }
+  if (job.mediaKind === 'subtitle') {
+    const { provider } = normalizeSourceUrl(job.sourceUrl);
+    if (provider.id !== 'youtube' || !/^[a-z0-9_-]{1,35}$/i.test(job.subtitleLanguage || '')) {
+      throw new Error('La fuente de subtítulos ya no es válida.');
+    }
+    job.providerId = 'youtube';
     schedulePersist();
     return;
   }
   const video = await analyzeSource(job.sourceUrl, false);
+  if (job.providerId === 'youtube' && job.mediaKind === 'audio') {
+    const audio = video.audioTrack;
+    if (!audio || !isAllowedMediaUrl(audio.url) || !/^[a-z0-9_-]{1,24}$/i.test(audio.formatId || '')) {
+      throw new Error('El audio de YouTube ya no está disponible.');
+    }
+    job.mediaUrl = audio.url;
+    job.audioUrl = null;
+    job.youtubeFormatId = audio.formatId;
+    job.youtubeAudioFormatId = null;
+    job.type = audio.type || 'mp4';
+    job.providerId = video.provider;
+    schedulePersist();
+    return;
+  }
   const quality = video.qualities.find((item) => item.label === job.quality)
     || video.qualities.find((item) => Number.parseInt(item.label, 10) === Number.parseInt(job.quality, 10));
   if (!quality || !isAllowedMediaUrl(quality.url)) throw new Error(`La calidad ${job.quality} ya no está disponible.`);
   job.mediaUrl = quality.url;
   job.audioUrl = quality.audioUrl || null;
+  job.youtubeFormatId = quality.formatId || null;
+  job.youtubeAudioFormatId = quality.audioFormatId || null;
   job.type = quality.type;
   job.providerId = video.provider;
   schedulePersist();
@@ -1893,10 +2747,438 @@ export function buildIdentityFilterGraph(protection) {
   return filters.join(';\n');
 }
 
+/**
+ * Extracts 16 kHz mono PCM and asks the isolated Node worker to run Whisper.
+ * The worker receives only internal allowlisted values and local paths. Its
+ * newline-delimited progress events are bounded before updating the job.
+ */
+async function runTranscriptionJobAttempt(job) {
+  const temporaryAudioPath = join(JOB_DIR, `${job.id}.transcription.wav`);
+  try {
+    await mkdir(TRANSCRIPTION_CACHE_DIR, { recursive: true });
+    try { await unlink(job.outputPath); } catch {}
+    try { await unlink(temporaryAudioPath); } catch {}
+    const clip = job.clip;
+    const extractionArgs = [
+      '-hide_banner', '-loglevel', 'error', '-nostats', '-nostdin',
+      ...(clip ? ['-ss', String(clip.start), '-t', String(clip.duration)] : []),
+      '-i', job.mediaUrl,
+      '-map', '0:a:0', '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le',
+      '-progress', 'pipe:1', '-y', temporaryAudioPath
+    ];
+    const extraction = await runSubtitleProcess(
+      FFMPEG_COMMAND,
+      extractionArgs,
+      job,
+      false,
+      { start: 0, end: 20 }
+    );
+    if (extraction.code !== 0 || job.cancelRequested) return extraction;
+    job.progress = Math.max(job.progress, 22);
+    schedulePersist();
+    return await new Promise((done) => {
+      const child = spawn(process.execPath, [
+        TRANSCRIPTION_WORKER_PATH,
+        temporaryAudioPath,
+        job.outputPath,
+        job.transcriptionModelId,
+        job.subtitleLanguage || 'auto',
+        job.outputFormat,
+        TRANSCRIPTION_CACHE_DIR,
+        String(TRANSCRIPTION_ALLOW_MODEL_DOWNLOAD)
+      ], {
+        cwd: JOB_DIR,
+        env: Object.fromEntries(Object.entries({
+          PATH: process.env.PATH,
+          SystemRoot: process.env.SystemRoot,
+          WINDIR: process.env.WINDIR,
+          LANG: process.env.LANG || 'C',
+          TEMP: JOB_DIR,
+          TMP: JOB_DIR,
+          HF_HUB_DISABLE_TELEMETRY: '1'
+        }).filter(([, value]) => value != null)),
+        shell: false,
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+      job.process = child;
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (chunk) => {
+        stdout += chunk;
+        const lines = stdout.split(/\r?\n/);
+        stdout = lines.pop() || '';
+        for (const line of lines) {
+          try {
+            const event = JSON.parse(line);
+            if (event.type === 'model') {
+              job.progress = Math.max(job.progress, Math.min(44, 22 + Math.round(Number(event.progress) * 0.22)));
+            } else if (event.type === 'progress') {
+              job.progress = Math.max(job.progress, Math.min(98, Number(event.progress) || 0));
+            } else if (event.type === 'complete') {
+              job.progress = 99;
+            }
+            schedulePersist();
+          } catch {}
+        }
+      });
+      child.stderr.on('data', (chunk) => { stderr = (stderr + chunk).slice(-8_000); });
+      child.once('error', (error) => {
+        job.process = null;
+        done({ code: -1, error: error.message, stderr });
+      });
+      child.once('close', (code) => {
+        job.process = null;
+        done({ code, stderr });
+      });
+    });
+  } catch (error) {
+    return { code: -1, error: error.message, stderr: error.message };
+  } finally {
+    try { await unlink(temporaryAudioPath); } catch {}
+  }
+}
+
+/** Runs either FFmpeg embedded-track extraction or yt-dlp caption export. */
+async function runSubtitleJobAttempt(job) {
+  if (job.subtitleGenerated) return runTranscriptionJobAttempt(job);
+  const profile = SUBTITLE_OUTPUTS.get(job.outputFormat);
+  if (!profile) return { code: -1, error: 'Invalid subtitle profile', stderr: '' };
+  try { await unlink(job.outputPath); } catch {}
+
+  if (job.sourceType === 'upload') {
+    const clip = job.clip;
+    const args = [
+      '-hide_banner', '-loglevel', 'error', '-nostats', '-nostdin',
+      ...(clip ? ['-ss', String(clip.start), '-t', String(clip.duration)] : []),
+      '-i', job.mediaUrl,
+      '-map', `0:s:${job.subtitleTrackIndex}`,
+      '-c:s', profile.codec,
+      '-avoid_negative_ts', 'make_zero',
+      '-progress', 'pipe:1', '-y', job.outputPath
+    ];
+    return runSubtitleProcess(FFMPEG_COMMAND, args, job, false);
+  }
+
+  const prefix = `${job.id}.subtitle.`;
+  for (const name of await readdir(JOB_DIR)) {
+    if (name.startsWith(prefix)) try { await unlink(join(JOB_DIR, name)); } catch {}
+  }
+  const args = [
+    '--skip-download', '--no-playlist', '--no-warnings', '--restrict-filenames',
+    job.subtitleAutomatic ? '--write-auto-subs' : '--write-subs',
+    '--sub-langs', job.subtitleLanguage,
+    '--sub-format', job.outputFormat === 'vtt' ? 'vtt/best' : 'srt/vtt/best',
+    '--convert-subs', job.outputFormat,
+    '--output', `${job.id}.subtitle.%(ext)s`,
+    job.sourceUrl
+  ];
+  const result = await runSubtitleProcess(YT_DLP_COMMAND, args, job, true);
+  if (result.code !== 0) return result;
+  const names = await readdir(JOB_DIR);
+  const expectedExtension = profile.extension.toLowerCase();
+  const candidate = names.find((name) => name.startsWith(prefix) && name.toLowerCase().endsWith(expectedExtension));
+  if (!candidate) return { code: -1, stderr: result.stderr || 'Subtitle output was not created.' };
+  try {
+    await rename(join(JOB_DIR, candidate), job.outputPath);
+    for (const name of names) {
+      if (name.startsWith(prefix) && name !== candidate) try { await unlink(join(JOB_DIR, name)); } catch {}
+    }
+    job.progress = 99;
+    return result;
+  } catch (error) {
+    return { code: -1, error: error.message, stderr: result.stderr };
+  }
+}
+
+/** Spawns a bounded subtitle tool and returns its sanitized process result. */
+function runSubtitleProcess(command, args, job, stagedProgress, progressRange = { start: 0, end: 99 }) {
+  return new Promise((done) => {
+    const child = spawn(command, args, {
+      cwd: JOB_DIR,
+      env: Object.fromEntries(Object.entries({
+        PATH: process.env.PATH,
+        SystemRoot: process.env.SystemRoot,
+        WINDIR: process.env.WINDIR,
+        LANG: process.env.LANG || 'C',
+        TEMP: JOB_DIR,
+        TMP: JOB_DIR
+      }).filter(([, value]) => value != null)),
+      shell: false,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    job.process = child;
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => {
+      stdout = (stdout + chunk).slice(-4_000);
+      if (stagedProgress) job.progress = Math.max(job.progress, 65);
+      const matches = [...stdout.matchAll(/out_time=(\d+):(\d+):(\d+(?:\.\d+)?)/g)];
+      const match = matches.at(-1);
+      if (match && job.expectedDuration > 0) {
+        const seconds = Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+        const ratio = Math.max(0, Math.min(1, seconds / job.expectedDuration));
+        const scaled = progressRange.start + Math.round(ratio * (progressRange.end - progressRange.start));
+        job.progress = Math.max(job.progress, Math.min(progressRange.end, scaled));
+      }
+      schedulePersist();
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr = (stderr + chunk).slice(-4_000);
+      if (stagedProgress) job.progress = Math.max(job.progress, 20);
+    });
+    child.once('error', (error) => {
+      job.process = null;
+      done({ code: -1, error: error.message, stderr });
+    });
+    child.once('close', (code) => {
+      job.process = null;
+      done({ code, stderr });
+    });
+  });
+}
+
+/** Builds the finite encoder arguments shared by local and remote audio jobs. */
+function audioEncodingArgsForJob(job) {
+  const bitrate = AUDIO_BITRATES.has(Number(job.audioBitrate)) ? Number(job.audioBitrate) : 192;
+  const audioCodec = job.audioCodec || AUDIO_OUTPUTS.get(job.outputFormat)?.defaultCodec || 'mp3';
+  if (audioCodec === 'pcm-s16le') return ['-c:a', 'pcm_s16le', '-ar', '48000', '-ac', '2'];
+  if (audioCodec === 'flac') return ['-c:a', 'flac', '-compression_level', '5', '-ar', '48000', '-ac', '2'];
+  if (audioCodec === 'aac') {
+    return ['-c:a', 'aac', '-profile:a', 'aac_low', '-b:a', `${bitrate}k`, '-ar', '48000', '-movflags', '+faststart'];
+  }
+  if (audioCodec === 'vorbis') return ['-c:a', 'libvorbis', '-b:a', `${bitrate}k`, '-ar', '48000'];
+  if (audioCodec === 'opus') return ['-c:a', 'libopus', '-b:a', `${bitrate}k`, '-ar', '48000'];
+  return ['-c:a', 'libmp3lame', '-b:a', `${bitrate}k`, '-ar', '48000', '-id3v2_version', '3'];
+}
+
+/** Returns one shell-safe yt-dlp selector derived only from provider metadata. */
+export function youtubeFormatSelector(job) {
+  const primary = String(job?.youtubeFormatId || '');
+  const audio = String(job?.youtubeAudioFormatId || '');
+  if (!/^[a-z0-9_-]{1,24}$/i.test(primary)) throw new Error('El formato de YouTube ya no es válido.');
+  if (audio && !/^[a-z0-9_-]{1,24}$/i.test(audio)) throw new Error('El formato de audio de YouTube ya no es válido.');
+  return job.mediaKind === 'video' && audio ? `${primary}+${audio}` : primary;
+}
+
+/** Returns the strictly job-owned yt-dlp staging prefix for one UUID. */
+function youtubeStagingPrefix(id) {
+  return /^[a-f0-9-]{36}$/i.test(String(id || '')) ? `${id}.youtube.` : null;
+}
+
+/** Lists only staging files owned by the requested YouTube job. */
+async function youtubeStagingFiles(id) {
+  const prefix = youtubeStagingPrefix(id);
+  if (!prefix) return [];
+  return (await readdir(JOB_DIR)).filter((name) => name.startsWith(prefix));
+}
+
+/** Counts resumable yt-dlp parts so quota and persistence remain accurate. */
+async function youtubeStagingBytes(id) {
+  let total = 0;
+  for (const name of await youtubeStagingFiles(id)) {
+    try { total += (await stat(join(JOB_DIR, name))).size; } catch {}
+  }
+  return total;
+}
+
+/** Removes only files with the validated UUID-owned yt-dlp prefix. */
+async function removeYoutubeStagingFiles(id) {
+  for (const name of await youtubeStagingFiles(id)) {
+    try { await unlink(join(JOB_DIR, name)); } catch {}
+  }
+}
+
+/**
+ * Uses yt-dlp's native downloader for YouTube. Direct signed Googlevideo URLs
+ * can bind delivery to yt-dlp's client context and return HTTP 403 to FFmpeg.
+ */
+async function runYoutubeJobAttempt(job) {
+  const prefix = youtubeStagingPrefix(job.id);
+  if (!prefix) return { code: -1, error: 'Invalid YouTube job identifier.' };
+  try {
+    try { await unlink(job.outputPath); } catch {}
+    const selector = youtubeFormatSelector(job);
+    job.stage = 'downloading';
+    schedulePersist();
+    const args = [
+      '--no-playlist', '--no-warnings', '--newline', '--continue',
+      '--ffmpeg-location', FFMPEG_COMMAND,
+      '--format', selector,
+      ...(job.mediaKind === 'video' ? ['--merge-output-format', 'mp4'] : []),
+      '--output', `${prefix}%(ext)s`,
+      job.sourceUrl
+    ];
+    const download = await runYoutubeDownloadProcess(args, job);
+    job.sourceSize = await youtubeStagingBytes(job.id);
+    schedulePersist();
+    if (job.cancelRequested) {
+      await removeYoutubeStagingFiles(job.id);
+      job.sourceSize = 0;
+      schedulePersist();
+      return download;
+    }
+    if (download.code !== 0) return download;
+
+    const candidates = [];
+    for (const name of await readdir(JOB_DIR)) {
+      if (!name.startsWith(prefix) || name.endsWith('.part') || name.endsWith('.ytdl')) continue;
+      try {
+        const info = await stat(join(JOB_DIR, name));
+        if (info.size > 0) candidates.push({ name, size: info.size });
+      } catch {}
+    }
+    candidates.sort((a, b) => {
+      if (job.mediaKind === 'video') {
+        const aMp4 = a.name.toLowerCase().endsWith('.mp4') ? 1 : 0;
+        const bMp4 = b.name.toLowerCase().endsWith('.mp4') ? 1 : 0;
+        if (aMp4 !== bMp4) return bMp4 - aMp4;
+      }
+      return b.size - a.size;
+    });
+    const stagedPath = candidates[0] ? join(JOB_DIR, candidates[0].name) : null;
+    if (!stagedPath) return { code: -1, stderr: download.stderr || 'yt-dlp did not create a media file.' };
+
+    if (job.mediaKind === 'video' && !job.clip) {
+      job.stage = 'finalizing';
+      schedulePersist();
+      await rename(stagedPath, job.outputPath);
+      await removeYoutubeStagingFiles(job.id);
+      job.sourceSize = 0;
+      job.progress = 99;
+      schedulePersist();
+      return { code: 0, stderr: download.stderr };
+    }
+    job.stage = 'processing';
+    schedulePersist();
+    const processed = await runYoutubePostProcess(stagedPath, job, download.stderr);
+    if (processed.code === 0 || job.cancelRequested) {
+      await removeYoutubeStagingFiles(job.id);
+      job.sourceSize = 0;
+      schedulePersist();
+    }
+    return processed;
+  } catch (error) {
+    return { code: -1, error: error.message, stderr: error.message };
+  }
+}
+
+/** Runs the network stage and maps yt-dlp's percentage to 0–80%. */
+function runYoutubeDownloadProcess(args, job) {
+  return new Promise((done) => {
+    const child = spawn(YT_DLP_COMMAND, args, {
+      cwd: JOB_DIR,
+      env: Object.fromEntries(Object.entries({
+        PATH: process.env.PATH,
+        SystemRoot: process.env.SystemRoot,
+        WINDIR: process.env.WINDIR,
+        LANG: process.env.LANG || 'C',
+        TEMP: JOB_DIR,
+        TMP: JOB_DIR
+      }).filter(([, value]) => value != null)),
+      shell: false,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    job.process = child;
+    let stderr = '';
+    const inspectProgress = (chunk) => {
+      const text = String(chunk);
+      const matches = [...text.matchAll(/(?:^|\s)(\d{1,3}(?:\.\d+)?)%/g)];
+      const percentage = Number(matches.at(-1)?.[1]);
+      if (Number.isFinite(percentage)) {
+        job.progress = Math.max(job.progress, Math.min(80, Math.round(percentage * 0.8)));
+      } else {
+        job.progress = Math.max(job.progress, 2);
+      }
+      schedulePersist();
+    };
+    child.stdout.on('data', inspectProgress);
+    child.stderr.on('data', (chunk) => {
+      stderr = (stderr + chunk).slice(-8_000);
+      inspectProgress(chunk);
+    });
+    child.once('error', (error) => {
+      job.process = null;
+      done({ code: -1, error: error.message, stderr });
+    });
+    child.once('close', (code) => {
+      job.process = null;
+      done({ code, stderr });
+    });
+  });
+}
+
+/** Transcodes a downloaded YouTube audio file or trims a downloaded MP4. */
+function runYoutubePostProcess(stagedPath, job, previousStderr = '') {
+  const clip = job.clip;
+  const args = job.mediaKind === 'audio'
+    ? [
+        '-hide_banner', '-loglevel', 'error', '-nostats', '-nostdin',
+        ...(clip ? ['-ss', String(clip.start), '-t', String(clip.duration)] : []),
+        '-i', stagedPath, '-map', '0:a:0', '-vn',
+        ...audioEncodingArgsForJob(job),
+        '-af', 'aresample=async=1:first_pts=0',
+        '-progress', 'pipe:1', '-y', job.outputPath
+      ]
+    : [
+        '-hide_banner', '-loglevel', 'error', '-nostats', '-nostdin',
+        '-ss', String(clip.start), '-t', String(clip.duration),
+        '-i', stagedPath, '-map', '0:v:0', '-map', '0:a:0?',
+        '-c:v', 'copy', '-c:a', 'aac', '-profile:a', 'aac_low', '-b:a', '128k', '-ar', '48000',
+        '-af', 'aresample=async=1:first_pts=0', '-avoid_negative_ts', 'make_zero',
+        '-movflags', '+faststart', '-progress', 'pipe:1', '-y', job.outputPath
+      ];
+  return new Promise((done) => {
+    const child = spawn(FFMPEG_COMMAND, args, {
+      cwd: JOB_DIR,
+      env: Object.fromEntries(Object.entries({
+        PATH: process.env.PATH,
+        SystemRoot: process.env.SystemRoot,
+        WINDIR: process.env.WINDIR,
+        LANG: process.env.LANG || 'C',
+        TEMP: JOB_DIR,
+        TMP: JOB_DIR
+      }).filter(([, value]) => value != null)),
+      shell: false,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    job.process = child;
+    let progressBuffer = '';
+    let stderr = previousStderr;
+    child.stdout.on('data', (chunk) => {
+      progressBuffer += chunk;
+      const lines = progressBuffer.split(/\r?\n/);
+      progressBuffer = lines.pop() || '';
+      for (const line of lines) {
+        const match = line.match(/^out_time=(\d+):(\d+):(\d+(?:\.\d+)?)$/);
+        if (!match) continue;
+        const seconds = Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+        const ratio = Math.max(0, Math.min(1, seconds / job.expectedDuration));
+        job.progress = Math.max(job.progress, Math.min(99, 80 + Math.round(ratio * 19)));
+        schedulePersist();
+      }
+    });
+    child.stderr.on('data', (chunk) => { stderr = (stderr + chunk).slice(-8_000); });
+    child.once('error', (error) => {
+      job.process = null;
+      done({ code: -1, error: error.message, stderr });
+    });
+    child.once('close', (code) => {
+      job.process = null;
+      done({ code, stderr });
+    });
+  });
+}
+
 function runJobAttempt(job) {
+  if (job.mediaKind === 'subtitle') return runSubtitleJobAttempt(job);
+  if (job.sourceType === 'remote' && job.providerId === 'youtube') return runYoutubeJobAttempt(job);
   const outputArgs = job.clip ? ['-t', String(job.clip.duration)] : [];
   const localUpload = job.sourceType === 'upload';
-  const audioJob = localUpload && job.mediaKind === 'audio';
+  const audioJob = job.mediaKind === 'audio';
   const joinedAudio = audioJob && Array.isArray(job.audioSources) && job.audioSources.length > 1;
   const identityFilter = localUpload ? buildIdentityFilterGraph(job.identityProtection) : null;
   const identityFilterPath = identityFilter ? join(JOB_DIR, `${job.id}.identity-filter.txt`) : null;
@@ -1908,18 +3190,6 @@ function runJobAttempt(job) {
     ]),
     '-i', url
   ];
-  const audioEncodingArgs = () => {
-    const bitrate = AUDIO_BITRATES.has(Number(job.audioBitrate)) ? Number(job.audioBitrate) : 192;
-    const audioCodec = job.audioCodec || AUDIO_OUTPUTS.get(job.outputFormat)?.defaultCodec || 'mp3';
-    if (audioCodec === 'pcm-s16le') return ['-c:a', 'pcm_s16le', '-ar', '48000', '-ac', '2'];
-    if (audioCodec === 'flac') return ['-c:a', 'flac', '-compression_level', '5', '-ar', '48000', '-ac', '2'];
-    if (audioCodec === 'aac') {
-      return ['-c:a', 'aac', '-profile:a', 'aac_low', '-b:a', `${bitrate}k`, '-ar', '48000', '-movflags', '+faststart'];
-    }
-    if (audioCodec === 'vorbis') return ['-c:a', 'libvorbis', '-b:a', `${bitrate}k`, '-ar', '48000'];
-    if (audioCodec === 'opus') return ['-c:a', 'libopus', '-b:a', `${bitrate}k`, '-ar', '48000'];
-    return ['-c:a', 'libmp3lame', '-b:a', `${bitrate}k`, '-ar', '48000', '-id3v2_version', '3'];
-  };
   const videoEncodingArgs = () => {
     if (job.videoCodec === 'hevc') {
       return ['-c:v', 'libx265', '-preset', 'fast', '-crf', '25', '-pix_fmt', 'yuv420p',
@@ -1948,7 +3218,7 @@ function runJobAttempt(job) {
         ...sourceInputs,
         '-filter_complex', filter,
         '-map', '[aout]', '-vn',
-        ...audioEncodingArgs(),
+        ...audioEncodingArgsForJob(job),
         '-progress', 'pipe:1', '-y', job.outputPath
       ];
     }
@@ -1956,7 +3226,7 @@ function runJobAttempt(job) {
       ...common,
       ...input(job.mediaUrl, true),
       '-map', '0:a:0', '-vn',
-      ...audioEncodingArgs(),
+      ...audioEncodingArgsForJob(job),
       '-af', 'aresample=async=1:first_pts=0',
       '-progress', 'pipe:1', '-y', job.outputPath
     ];
@@ -2035,7 +3305,33 @@ function runJobAttempt(job) {
 }
 
 /** Convierte diagnósticos técnicos de FFmpeg en mensajes aptos para usuario. */
-function friendlyFfmpegError(stderr, attempts = 1, sourceType = 'remote', mediaKind = 'video') {
+function friendlyFfmpegError(stderr, attempts = 1, sourceType = 'remote', mediaKind = 'video', job = null) {
+  if (mediaKind === 'subtitle') {
+    if (job?.subtitleGenerated) {
+      if (/matches no streams|does not contain any stream|stream map/i.test(stderr)) {
+        return 'El archivo no contiene una pista de audio compatible para transcribir.';
+      }
+      if (/No speech was detected/i.test(stderr)) {
+        return 'No se detectó voz en el intervalo seleccionado.';
+      }
+      if (/fetch failed|ENOTFOUND|ECONN|model.+not found|remote models.+disabled/i.test(stderr)) {
+        return 'No fue posible obtener el modelo de transcripción. Revisa la conexión o precarga el modelo para trabajar sin Internet.';
+      }
+      return 'No fue posible generar subtítulos desde el audio del archivo.';
+    }
+    if (sourceType === 'upload' && /matches no streams|does not contain any stream|stream map/i.test(stderr)) {
+      return 'El video no contiene la pista de subtítulos seleccionada.';
+    }
+    if (/no subtitles|requested format is not available|did not get any data blocks/i.test(stderr)) {
+      return 'La pista de subtítulos seleccionada ya no está disponible.';
+    }
+    if (/sign in|private video|not available/i.test(stderr)) {
+      return 'YouTube ya no permite acceder a los subtítulos de este video.';
+    }
+    return sourceType === 'upload'
+      ? 'No fue posible extraer la pista de subtítulos integrada.'
+      : `No fue posible exportar los subtítulos después de ${attempts} intentos.`;
+  }
   if (sourceType === 'upload') {
     if (mediaKind === 'audio') {
       if (/matches no streams|does not contain any stream|stream map/i.test(stderr)) {
@@ -2060,6 +3356,15 @@ function friendlyFfmpegError(stderr, attempts = 1, sourceType = 'remote', mediaK
     if (/unknown encoder.+libopus/i.test(stderr)) return 'FFmpeg no incluye el codificador Opus necesario.';
     return 'No fue posible exportar el recorte del archivo local.';
   }
+  if (mediaKind === 'audio') {
+    if (/sign in|private video|not available/i.test(stderr)) {
+      return 'YouTube ya no permite acceder al audio de este video.';
+    }
+    if (/403|Forbidden/i.test(stderr)) {
+      return `YouTube rechazó el audio incluso después de ${attempts} intentos.`;
+    }
+    return `No fue posible preparar el audio después de ${attempts} intentos.`;
+  }
   if (/403|Forbidden/i.test(stderr)) return `El proveedor rechazó el medio incluso después de ${attempts} intentos.`;
   if (/404|not found/i.test(stderr)) return 'Uno de los segmentos del video ya no está disponible.';
   return `No fue posible preparar el MP4 después de ${attempts} intentos.`;
@@ -2082,8 +3387,11 @@ function jobStorageBytes() {
 
 /** Elimina tanto el MP4 final como la fuente local temporal, si existe. */
 async function removeJobFiles(job) {
+  revokeDownloadGrantsForJob(job.id);
   try { await unlink(job.outputPath); } catch {}
   try { await unlink(join(JOB_DIR, `${job.id}.identity-filter.txt`)); } catch {}
+  try { await unlink(join(JOB_DIR, `${job.id}.transcription.wav`)); } catch {}
+  await removeYoutubeStagingFiles(job.id);
   const sourceFilenames = Array.isArray(job.audioSources) && job.audioSources.length
     ? job.audioSources.map((source) => source.sourceFilename)
     : [job.sourceFilename];
@@ -2158,8 +3466,15 @@ async function persistJobs() {
     videoCodec: job.videoCodec || null,
     audioCodec: job.audioCodec || null,
     audioBitrate: job.audioBitrate || null,
+    subtitleLanguage: job.subtitleLanguage || null,
+    subtitleName: job.subtitleName || null,
+    subtitleAutomatic: Boolean(job.subtitleAutomatic),
+    subtitleTrackIndex: Number.isInteger(job.subtitleTrackIndex) ? job.subtitleTrackIndex : null,
+    subtitleGenerated: Boolean(job.subtitleGenerated),
+    transcriptionModelProfile: job.subtitleGenerated ? job.transcriptionModelProfile || null : null,
     filename: job.filename,
     status: job.status,
+    stage: job.stage || null,
     progress: job.progress,
     size: job.size,
     error: job.error,
@@ -2194,6 +3509,8 @@ async function initializeJobs() {
     if (!/^[a-f0-9-]{36}$/i.test(record.id || '') || now - (record.completedAt || record.createdAt || 0) >= JOB_TTL_MS) {
       if (/^[a-f0-9-]{36}$/i.test(record.id || '')) {
         try { await unlink(join(JOB_DIR, `${record.id}${outputExtensionForJob(record)}`)); } catch {}
+        try { await unlink(join(JOB_DIR, `${record.id}.transcription.wav`)); } catch {}
+        await removeYoutubeStagingFiles(record.id);
         const expiredFilenames = Array.isArray(record.audioSources) && record.audioSources.length
           ? record.audioSources.map((source) => source.sourceFilename)
           : [record.sourceFilename];
@@ -2205,7 +3522,11 @@ async function initializeJobs() {
       continue;
     }
     const sourceType = record.sourceType === 'upload' ? 'upload' : 'remote';
-    const mediaKind = sourceType === 'upload' && record.mediaKind === 'audio' ? 'audio' : 'video';
+    const mediaKind = record.mediaKind === 'subtitle'
+      ? 'subtitle'
+      : record.mediaKind === 'audio'
+        ? 'audio'
+        : 'video';
     // A persisted audio job is restored only when its output profile is still
     // explicitly supported. This prevents an edited/corrupt jobs.json from
     // selecting an arbitrary filename extension or FFmpeg output container.
@@ -2215,6 +3536,32 @@ async function initializeJobs() {
       ? String(record.audioCodec || audioOutput.defaultCodec).toLowerCase()
       : null;
     if (audioOutput && !audioOutput.codecs.has(restoredAudioCodec)) continue;
+    const subtitleOutput = mediaKind === 'subtitle' ? SUBTITLE_OUTPUTS.get(record.outputFormat) : null;
+    if (mediaKind === 'subtitle' && !subtitleOutput) continue;
+    const restoredSubtitleGenerated = mediaKind === 'subtitle'
+      && sourceType === 'upload'
+      && Boolean(record.subtitleGenerated);
+    const restoredSubtitleLanguage = mediaKind === 'subtitle'
+      && (sourceType === 'remote' || restoredSubtitleGenerated)
+      ? String(record.subtitleLanguage || '').trim()
+      : null;
+    const restoredSubtitleTrackIndex = mediaKind === 'subtitle' && sourceType === 'upload' && !restoredSubtitleGenerated
+      ? Number(record.subtitleTrackIndex)
+      : null;
+    if (mediaKind === 'subtitle' && sourceType === 'remote'
+      && !/^[a-z0-9_-]{1,35}$/i.test(restoredSubtitleLanguage)) continue;
+    if (mediaKind === 'subtitle' && sourceType === 'upload' && !restoredSubtitleGenerated
+      && (!Number.isInteger(restoredSubtitleTrackIndex) || restoredSubtitleTrackIndex < 0 || restoredSubtitleTrackIndex > 31)) continue;
+    const restoredTranscriptionModelProfile = restoredSubtitleGenerated
+      ? String(record.transcriptionModelProfile || '').trim().toLowerCase()
+      : null;
+    const restoredTranscriptionModel = restoredSubtitleGenerated
+      ? TRANSCRIPTION_MODELS.get(restoredTranscriptionModelProfile)
+      : null;
+    if (restoredSubtitleGenerated
+      && (!TRANSCRIPTION_ENABLED
+        || !TRANSCRIPTION_LANGUAGES.has(restoredSubtitleLanguage)
+        || !restoredTranscriptionModel)) continue;
     let restoredVideoProfile = null;
     if (sourceType === 'upload' && mediaKind === 'video') {
       try {
@@ -2230,7 +3577,12 @@ async function initializeJobs() {
     let sourceExists = false;
     let audioSources = null;
     if (sourceType === 'upload') {
-      if (record.providerId !== (mediaKind === 'audio' ? 'audio' : 'upload')) continue;
+      const expectedProvider = mediaKind === 'audio'
+        ? 'audio'
+        : mediaKind === 'subtitle'
+          ? (restoredSubtitleGenerated ? 'transcription' : 'subtitle')
+          : 'upload';
+      if (record.providerId !== expectedProvider) continue;
       if (mediaKind === 'audio' && Array.isArray(record.audioSources) && record.audioSources.length > 1) {
         if (record.audioSources.length > MAX_AUDIO_JOIN_SOURCES) continue;
         audioSources = [];
@@ -2265,8 +3617,10 @@ async function initializeJobs() {
     } else {
       try {
         const { provider } = normalizeSourceUrl(record.sourceUrl);
-        if (provider.id !== record.providerId) continue;
+        if (provider.id !== record.providerId || (mediaKind === 'subtitle' && provider.id !== 'youtube')) continue;
+        if (mediaKind === 'audio' && provider.id !== 'youtube') continue;
       } catch { continue; }
+      if (record.providerId === 'youtube') sourceSize = await youtubeStagingBytes(record.id);
     }
     const job = {
       ...record,
@@ -2277,17 +3631,30 @@ async function initializeJobs() {
       audioSources,
       mediaUrl: sourceType === 'upload' && sourceExists ? sourcePath : null,
       audioUrl: null,
+      youtubeFormatId: null,
+      youtubeAudioFormatId: null,
       outputFormat: mediaKind === 'audio'
         ? record.outputFormat
-        : restoredVideoProfile?.outputFormat || 'mp4',
+        : mediaKind === 'subtitle'
+          ? record.outputFormat
+          : restoredVideoProfile?.outputFormat || 'mp4',
       outputContentType: mediaKind === 'audio'
         ? audioOutput.contentType
-        : restoredVideoProfile?.output.contentType || 'video/mp4',
+        : mediaKind === 'subtitle'
+          ? subtitleOutput.contentType
+          : restoredVideoProfile?.output.contentType || 'video/mp4',
       videoCodec: restoredVideoProfile?.videoCodec || null,
       audioCodec: mediaKind === 'audio' ? restoredAudioCodec : restoredVideoProfile?.audioCodec || null,
       audioBitrate: mediaKind === 'audio' && AUDIO_BITRATES.has(Number(record.audioBitrate))
         ? Number(record.audioBitrate)
         : null,
+      subtitleLanguage: restoredSubtitleLanguage,
+      subtitleName: mediaKind === 'subtitle' ? safeFilename(String(record.subtitleName || restoredSubtitleLanguage || 'subtitles')) : null,
+      subtitleAutomatic: mediaKind === 'subtitle' && Boolean(record.subtitleAutomatic),
+      subtitleTrackIndex: restoredSubtitleTrackIndex,
+      subtitleGenerated: restoredSubtitleGenerated,
+      transcriptionModelProfile: restoredTranscriptionModelProfile,
+      transcriptionModelId: restoredTranscriptionModel?.modelId || null,
       outputPath: join(JOB_DIR, `${record.id}${outputExtensionForJob(record)}`),
       process: null,
       cancelRequested: false,
@@ -2297,6 +3664,9 @@ async function initializeJobs() {
       identityProtection: record.identityProtection || null,
       maxRetries: Number.isInteger(record.maxRetries) ? record.maxRetries : MAX_JOB_RETRIES
     };
+    job.stage = ['queued', 'downloading', 'processing', 'finalizing'].includes(record.stage)
+      ? record.stage
+      : (record.status === 'queued' ? 'queued' : record.status === 'ready' ? 'finalizing' : 'processing');
     job.events = Array.isArray(record.events) ? record.events.slice(-50) : [];
     if (record.status === 'ready') {
       try { job.size = (await stat(job.outputPath)).size; } catch { job.status = 'error'; job.error = 'El archivo preparado se perdió.'; }
@@ -2307,6 +3677,7 @@ async function initializeJobs() {
         job.completedAt = Date.now();
       } else {
         job.status = 'queued';
+        job.stage = 'queued';
         job.progress = 0;
         job.etaSeconds = null;
         job.needsRefresh = true;
@@ -2319,6 +3690,58 @@ async function initializeJobs() {
   processJobQueue();
 }
 
+/**
+ * Creates a bounded, job-specific browser download capability. The native
+ * bearer token remains in sessionStorage and is never copied into a URL,
+ * cookie, persistent job, or log entry.
+ */
+async function createDownloadGrant(req, res, id) {
+  if (req.headers['x-vdownloader-download'] !== '1') {
+    return json(res, 403, { error: 'La autorización de descarga no es válida.' });
+  }
+  const job = jobs.get(id);
+  if (!canAccessJob(req, job)) return json(res, 404, { error: 'La tarea no existe o ya caducó.' });
+  if (job.status !== 'ready') return json(res, 409, { error: 'El archivo todavía no está listo.' });
+  try {
+    await stat(job.outputPath);
+  } catch {
+    return json(res, 404, { error: 'El archivo preparado ya no está disponible.' });
+  }
+
+  const now = Date.now();
+  for (const [grantId, grant] of downloadGrants) {
+    if (grant.expiresAt <= now || (grant.jobId === id && grant.profile.id === req.auth.id)) {
+      downloadGrants.delete(grantId);
+    }
+  }
+  while (downloadGrants.size >= MAX_DOWNLOAD_GRANTS) {
+    downloadGrants.delete(downloadGrants.keys().next().value);
+  }
+
+  const grantId = randomUUID();
+  const expiresAt = now + DOWNLOAD_GRANT_TTL_MS;
+  downloadGrants.set(grantId, {
+    jobId: id,
+    profile: {
+      id: req.auth.id,
+      role: req.auth.role,
+      maxActiveJobs: req.auth.maxActiveJobs
+    },
+    expiresAt
+  });
+
+  const cookie = [
+    `${downloadGrantCookieName(id)}=${grantId}`,
+    `Max-Age=${Math.floor(DOWNLOAD_GRANT_TTL_MS / 1000)}`,
+    `Path=/api/jobs/${id}/download`,
+    'HttpOnly',
+    'SameSite=Strict',
+    ...(isSecureRequest(req) ? ['Secure'] : [])
+  ].join('; ');
+  res.setHeader('set-cookie', cookie);
+  json(res, 201, { downloadUrl: `/api/jobs/${id}/download`, expiresAt });
+}
+
 /** Streams a ready video or audio output and supports resumable byte ranges. */
 async function downloadJob(req, res, id) {
   const job = jobs.get(id);
@@ -2326,6 +3749,9 @@ async function downloadJob(req, res, id) {
   if (job.status !== 'ready') return json(res, 409, { error: 'El archivo todavía no está listo.' });
   try {
     const info = await stat(job.outputPath);
+    if (info.size <= 0) {
+      return json(res, 404, { error: 'El archivo preparado está vacío o ya no está disponible.' });
+    }
     const range = req.headers.range?.match(/^bytes=(\d*)-(\d*)$/);
     let start = 0;
     let end = info.size - 1;
@@ -2341,7 +3767,7 @@ async function downloadJob(req, res, id) {
     }
     const headers = {
       'content-type': job.outputContentType || (job.mediaKind === 'audio' ? 'application/octet-stream' : 'video/mp4'),
-      'content-disposition': `attachment; filename="${job.filename}"`,
+      'content-disposition': attachmentContentDisposition(job.filename),
       'content-length': end - start + 1,
       'accept-ranges': 'bytes',
       'cache-control': 'private, no-store',
@@ -2350,9 +3776,15 @@ async function downloadJob(req, res, id) {
     if (status === 206) headers['content-range'] = `bytes ${start}-${end}/${info.size}`;
     res.writeHead(status, headers);
     if (req.method === 'HEAD') return res.end();
-    createReadStream(job.outputPath, { start, end }).pipe(res);
+    const stream = createReadStream(job.outputPath, { start, end });
+    stream.once('error', () => {
+      if (!res.headersSent) json(res, 404, { error: 'El archivo preparado ya no está disponible.' });
+      else res.destroy();
+    });
+    stream.pipe(res);
   } catch {
-    json(res, 404, { error: 'El archivo preparado ya no está disponible.' });
+    if (!res.headersSent) json(res, 404, { error: 'El archivo preparado ya no está disponible.' });
+    else res.destroy();
   }
 }
 
@@ -2518,6 +3950,9 @@ async function cleanupExpiredJobs() {
   for (const [id, track] of identityTracks) {
     if (track.expiresAt <= now) identityTracks.delete(id);
   }
+  for (const [id, grant] of downloadGrants) {
+    if (grant.expiresAt <= now || !jobs.has(grant.jobId)) downloadGrants.delete(id);
+  }
   for (const [key, record] of requestRates) {
     if (now - record.startedAt >= RATE_LIMIT_WINDOW_MS) requestRates.delete(key);
   }
@@ -2545,16 +3980,28 @@ export async function handleRequest(req, res) {
     return json(res, 426, { error: 'El acceso remoto requiere una conexión HTTPS verificada.' });
   }
   const requestUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-  const jobMatch = requestUrl.pathname.match(/^\/api\/jobs\/([a-f0-9-]+)(\/download|\/restart)?$/i);
+  const jobMatch = requestUrl.pathname.match(/^\/api\/jobs\/([a-f0-9-]+)(\/download|\/download-access|\/restart)?$/i);
   const mediaMatch = requestUrl.pathname.match(/^\/api\/media\/([a-f0-9-]{36})$/i);
   const isApi = requestUrl.pathname.startsWith('/api/');
   const isAdministrative = requestUrl.pathname.startsWith('/api/admin/') || requestUrl.pathname.endsWith('/restart');
+  const isDownload = ['GET', 'HEAD'].includes(req.method) && jobMatch?.[2] === '/download';
   if (isApi && !mediaMatch) {
     if (!allowRequest(req, isAdministrative)) {
-      res.setHeader('retry-after', '60');
+      const blockedUntil = authenticationFailures.get(requestAddress(req))?.blockedUntil || 0;
+      res.setHeader('retry-after', String(Math.max(60, Math.ceil((blockedUntil - Date.now()) / 1000))));
       return json(res, 429, { error: 'Demasiadas solicitudes. Inténtalo nuevamente más tarde.' });
     }
-    req.auth = accessProfileForRequest(req);
+    // Preview settings contain no credentials, jobs, paths or diagnostics.
+    // HTTPS and rate limits apply; the deployment's demo gate still applies.
+    if (req.method === 'GET' && requestUrl.pathname === '/api/upload-config') {
+      return json(res, 200, {
+        limitEnabled: uploadSettings.limitEnabled,
+        maxBytes: uploadSettings.maxBytes,
+        effectiveMaxBytes: MAX_UPLOAD_BYTES
+      });
+    }
+    req.auth = accessProfileForRequest(req)
+      || (isDownload ? downloadGrantProfileForRequest(req, jobMatch[1]) : null);
     if (!req.auth) {
       if (req.headers.authorization) recordAuthenticationFailure(req);
       return json(res, REMOTE_ACCESS_ENABLED ? 401 : 403, {
@@ -2568,8 +4015,13 @@ export async function handleRequest(req, res) {
   if (req.method === 'POST' && requestUrl.pathname === '/api/analyze') return analyze(req, res);
   if (req.method === 'POST' && requestUrl.pathname === '/api/identity-tracks') return createIdentityTrack(req, res);
   if (req.method === 'POST' && requestUrl.pathname === '/api/upload-jobs') return createUploadJob(req, res);
+  if (req.method === 'POST' && requestUrl.pathname === '/api/video-audio-jobs') return createVideoAudioExtractionJob(req, res);
+  if (req.method === 'POST' && requestUrl.pathname === '/api/subtitle-jobs') return createRemoteSubtitleJob(req, res);
+  if (req.method === 'POST' && requestUrl.pathname === '/api/subtitle-upload-jobs') return createLocalSubtitleJob(req, res);
+  if (req.method === 'POST' && requestUrl.pathname === '/api/transcription-jobs') return createTranscriptionJob(req, res);
   if (req.method === 'POST' && requestUrl.pathname === '/api/audio-jobs') return createAudioUploadJob(req, res);
   if (req.method === 'POST' && requestUrl.pathname === '/api/audio-join-jobs') return createAudioJoinJob(req, res);
+  if (req.method === 'POST' && requestUrl.pathname === '/api/remote-audio-jobs') return createRemoteAudioJob(req, res);
   if (req.method === 'GET' && requestUrl.pathname === '/api/jobs') return listJobs(req, res);
   if (req.method === 'POST' && requestUrl.pathname === '/api/jobs') return createJob(req, res);
   if (req.method === 'POST' && requestUrl.pathname === '/api/admin/jobs/restart') return restartJobsBulk(req, res);
@@ -2578,6 +4030,7 @@ export async function handleRequest(req, res) {
   if (req.method === 'GET' && jobMatch && !jobMatch[2]) return getJob(req, res, jobMatch[1]);
   if (req.method === 'DELETE' && jobMatch && !jobMatch[2]) return cancelJob(req, res, jobMatch[1]);
   if (req.method === 'POST' && jobMatch?.[2] === '/restart') return restartJob(req, res, jobMatch[1]);
+  if (req.method === 'POST' && jobMatch?.[2] === '/download-access') return createDownloadGrant(req, res, jobMatch[1]);
   if (['GET', 'HEAD'].includes(req.method) && jobMatch?.[2] === '/download') return downloadJob(req, res, jobMatch[1]);
   if (req.method === 'GET' && mediaMatch) return previewMedia(req, res, mediaMatch[1]);
   if (req.method === 'GET' && requestUrl.pathname === '/vendor/hls.min.js') return serveHlsLibrary(res);
@@ -2590,6 +4043,7 @@ export async function handleRequest(req, res) {
 
 /** Plain HTTP server exported for local execution and isolated tests. */
 export const server = http.createServer(handleRequest);
+server.requestTimeout = uploadSettings.requestTimeoutMs;
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   if (REMOTE_ACCESS_ENABLED && ACCESS_PROFILES.length < 1) {
@@ -2609,6 +4063,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         cert: await readFile(resolve(HTTPS_CERT_PATH))
       }, handleRequest)
     : server;
+  runtimeServer.requestTimeout = uploadSettings.requestTimeoutMs;
   runtimeServer.listen(PORT, SERVER_HOST, () => logEvent('info', 'server_started', {
     port: PORT,
     host: SERVER_HOST,

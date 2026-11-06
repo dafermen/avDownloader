@@ -3,7 +3,7 @@
 [![Linux CI](https://github.com/dafermen/avDownloader/actions/workflows/linux-ci.yml/badge.svg)](https://github.com/dafermen/avDownloader/actions/workflows/linux-ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Local, general-purpose web application for analyzing public videos from **YouTube**, **XVideos**, **Pornhub**, and **XNXX**, or trimming, joining, and transcoding local video and audio files.
+Local, general-purpose web application for analyzing public videos from **YouTube**, **XVideos**, **Pornhub**, and **XNXX**; trimming, joining, and transcoding local media; and exporting or locally generating subtitles.
 
 > Use this project only with content you have the right to download. Follow each provider's terms and applicable law. Adult-content providers are intended only for people aged 18 or older.
 
@@ -13,10 +13,24 @@ The image below is a real capture of the application running locally on port
 5177. It uses an empty workspace so no private media, signed provider URL, or
 administrator token is exposed.
 
-![vDownloader main interface with video and audio tools](docs/images/vdownloader-home.png)
+![vDownloader guided interface for video, audio, subtitles, and local tools](docs/images/vdownloader-home-guided.png)
+
+<details>
+<summary>Mobile layout preview</summary>
+
+<img src="docs/images/vdownloader-home-mobile.png" width="500" alt="vDownloader guided mobile interface">
+
+</details>
 
 ## Features
 
+- Task-first quick start for video, audio-only, subtitles, or local Identity
+  protection, with a visible five-step path from source to completed file.
+- Progressive link results: choose Video, Audio only, or Subtitles first, then
+  use Recommended, Maximum quality, or Small file presets. Advanced codec
+  controls remain available without crowding the default flow.
+- Batch analysis for up to ten links, processed sequentially to avoid an
+  avoidable provider request burst.
 - Automatic provider detection.
 - Spanish and English interface with a device-local language preference.
 - MP4 and HLS qualities, including high resolutions when available.
@@ -24,21 +38,38 @@ administrator token is exposed.
 - Visual trimming with start, end, and precision controls.
 - Local MP4, M4V, MOV, and WebM editor with preview, trimming, and allowlisted
   MP4/MOV/WebM/MKV output profiles using H.264, H.265, or VP9.
+- Audio-only extraction from a selected local-video range, with MP3, M4A/AAC,
+  OGG/Vorbis or Opus, Opus, FLAC, and WAV profiles plus 96–320 kbps lossy
+  quality choices.
 - Local audio editor for MP3, M4A, AAC, WAV, FLAC, OGG, and Opus sources,
   with per-source trimming, ordered joining, and MP3, M4A, OGG, Opus, FLAC,
   or WAV output.
+- Existing-caption export from YouTube or an embedded local-video subtitle
+  track to SRT or WebVTT, plus local Whisper speech-to-text generation from
+  MP4/M4V/MOV/WebM video or MP3/M4A/AAC/WAV/FLAC/OGG/Opus audio. Source audio
+  is not sent to a cloud transcription API.
+- Four explicit workflows—**Create a video**, **Extract audio from a video**,
+  **Edit audio files**, and **Export subtitles**—with a four-step guide and an output summary
+  before processing. Each workflow shows only its relevant controls.
 - Identity protection for local files: detection, anonymous person selection,
   manual point correction, missing-region creation, full-path review, and moving pixelation.
 - Temporary upload with progress; the source is sent only when exporting.
 - Remote H.264 sources copied without transcoding; local uploads use the
   explicitly selected compatible container/video/audio codec profile.
 - Configurable FFmpeg process queue.
-- Progress, estimated time, cancellation, and intelligent retries.
+- Real queue, download, processing, and finalization stages, cancellation,
+  intelligent retries, and clear next actions after completion.
 - Rate-aware progress polling that respects HTTP `Retry-After` without marking
   an active media job as failed.
 - Automatic refresh of temporary CDN links.
 - Persistence and recovery after restart.
+- Resumable YouTube staging: a failed network attempt keeps its UUID-owned
+  yt-dlp partial file for a safe retry or administrative restart; quota and
+  expiration cleanup include those bytes.
 - Resumable downloads through HTTP ranges.
+- Authenticated remote downloads stream directly to disk through a temporary,
+  job-scoped HttpOnly grant; native access tokens never enter download URLs and
+  multi-gigabyte outputs are not buffered in browser memory.
 - Local history and global job panel.
 - Administrative job restart while preserving quality and trim range.
 - Bulk restart, status/provider/date filters, expired-file cleanup, job event
@@ -47,6 +78,11 @@ administrator token is exposed.
 - Modular provider architecture and SSRF protection through allowlists.
 - Maintainable YouTube integration through local `yt-dlp`.
 - Automatic merging of adaptive YouTube video and audio.
+- YouTube audio-only export to MP3, M4A, OGG, Opus, FLAC, or WAV with
+  allowlisted 96–320 kbps lossy profiles and the same trim controls.
+- YouTube media is downloaded by yt-dlp's native HTTP client before local
+  FFmpeg processing, avoiding provider-bound signed URLs that reject direct
+  FFmpeg access with HTTP 403.
 - Operational diagnostics for FFmpeg, yt-dlp, queue, and storage.
 - JSON logs suitable for `journald` and configurable retention.
 - Opaque references: signed URLs are never sent to the browser or persisted.
@@ -69,11 +105,11 @@ On Linux, vDownloader searches for `ffmpeg` and `yt-dlp` in `PATH`. It does not 
 
 | Site | Supported video URL | Detected sources |
 |---|---|---|
-| YouTube | `https://www.youtube.com/watch?v=<id>`, `youtu.be/<id>`, `/shorts/<id>`, and `/live/<id>` | Combined MP4 or adaptive video + audio |
+| YouTube | `https://www.youtube.com/watch?v=<id>`, `youtu.be/<id>`, `/shorts/<id>`, and `/live/<id>` | Combined MP4 or adaptive video + audio; audio-only conversion; published or automatic caption tracks when available |
 | XVideos | `https://www.xvideos.com/video.<id>/<slug>` | MP4 and HLS |
 | Pornhub | `https://<language>.pornhub.com/view_video.php?viewkey=<id>` | HLS and published variants |
 | XNXX | `https://www.xnxx.com/video-<id>/<slug>` | MP4 and HLS |
-| Local file | MP4, M4V, MOV, or WebM selected from the computer | Trim and convert to MP4, MOV, WebM, or MKV with compatible H.264/H.265/VP9 and AAC/Opus profiles |
+| Local file | MP4, M4V, MOV, or WebM selected from the computer | Trim and convert to MP4, MOV, WebM, or MKV; extract audio; export an embedded track; or generate SRT/WebVTT from speech locally |
 | Local audio | One or more MP3, M4A, AAC, WAV, FLAC, OGG, or Opus files | Per-source trimming, ordered joining, and MP3/M4A/OGG/Opus/FLAC/WAV transcoding |
 
 Only individual public video pages are supported. Home pages, searches, profiles, categories, full playlists, private or sign-in-gated content, and unregistered mirror domains are not accepted. A YouTube `/live/<id>` URL is processed when it refers to an accessible recording. Final quality depends on the variants published by each site for that video.
@@ -163,7 +199,9 @@ You can also open it from the **Documentation** button on the main page. Project
 | `FFMPEG_PATH` | Linux: `ffmpeg` | FFmpeg command or absolute path. |
 | `YT_DLP_PATH` | Linux: `yt-dlp` | yt-dlp command or absolute path. |
 | `ADMIN_TOKEN` | empty | Token required to restart jobs from remote computers. When empty, administration works only from localhost. |
-| `MAX_UPLOAD_GB` | `2` | Maximum size of a temporary local source; cannot exceed `MAX_STORAGE_GB`. |
+| `UPLOAD_LIMIT_ENABLED` | `true` | `false` disables the per-upload cap; total storage quota remains enforced. |
+| `MAX_UPLOAD_GB` | `2` | Upload or combined audio-source limit in GiB when enabled; capped by `MAX_STORAGE_GB`. |
+| `UPLOAD_TIMEOUT_MINUTES` | `180` | Total HTTP request timeout, integer from 1 to 1440 minutes. |
 | `REMOTE_ACCESS_ENABLED` | `false` | Enables authenticated network access; otherwise the service binds to loopback only. |
 | `ACCESS_TOKENS_JSON` | `[]` | JSON profiles with `id`, strong `token`, `role`, and optional `maxActiveJobs`. |
 | `MAX_ACTIVE_JOBS_PER_USER` | `4` | Default active-job limit for authenticated users. |
@@ -183,6 +221,35 @@ $env:ADMIN_TOKEN = 'change-this-secret'
 $env:MAX_UPLOAD_GB = 4
 npm start
 ```
+
+
+### Large uploads and optional size cap
+
+The root `.env` is loaded on startup with Node.js 20.12+; existing process
+environment variables take precedence. The private VPS uses
+`/etc/avdownloader/avdownloader.env` through systemd, not the demo-login env.
+For a 5 GiB video, allow room for both the source and estimated output:
+
+```dotenv
+UPLOAD_LIMIT_ENABLED=true
+MAX_UPLOAD_GB=6
+MAX_STORAGE_GB=12
+UPLOAD_TIMEOUT_MINUTES=180
+```
+
+Set `UPLOAD_LIMIT_ENABLED=false` to remove the per-upload cap. The total
+storage quota, free disk space, duration, format and exact byte-count checks
+still apply. `MAX_UPLOAD_GB` is ignored in that mode. Sizes use GiB (1024^3
+bytes). The same setting governs audio uploads and combined join sources.
+Restart the app after changes; on this VPS use `sudo systemctl restart avdownloader`.
+Check `/api/health` with authentication: `uploads.limitEnabled`, `maxBytes`
+(`null` when disabled), `effectiveMaxBytes` and `requestTimeoutMs`.
+
+Nginx must stream requests with `proxy_request_buffering off`,
+`client_max_body_size 0`, and suitable idle timeouts. The application then
+enforces the environment setting, so future size changes need no proxy edit.
+This does not remove authentication or the pilot expiry. A full 5 GiB upload
+and conversion with the owner's video remains a user acceptance check.
 
 ## Architecture overview
 
@@ -228,15 +295,21 @@ LICENSE          MIT license for project-owned code
 
 - `POST /api/analyze`: analyzes a URL and returns qualities with `selectionId`, without CDN URLs.
 - `POST /api/jobs`: creates a job with `{ "selectionId": "uuid", "start": 0, "end": 30 }`.
+- `POST /api/remote-audio-jobs`: creates an audio-only YouTube job from an opaque selection and an allowlisted format, codec, and bitrate profile.
 - `POST /api/upload-jobs`: receives a local video as a binary body and creates a trim/transcode job.
+- `POST /api/video-audio-jobs`: receives a local video and exports its selected audio range.
 - `POST /api/audio-jobs`: receives one local audio file, trims it, and transcodes it with an allowlisted format/codec profile.
 - `POST /api/audio-join-jobs`: streams two to twenty ordered audio sources plus bounded metadata and creates one join/transcode job.
+- `POST /api/subtitle-jobs`: creates SRT/WebVTT from an opaque YouTube caption selection.
+- `POST /api/subtitle-upload-jobs`: receives a local video and extracts one bounded embedded subtitle track.
+- `POST /api/transcription-jobs`: receives an allowlisted local video or audio file and generates SRT/WebVTT from its selected range with local Whisper inference.
 - `POST /api/identity-tracks`: validates face tracking and returns a single-use UUID reference.
 - `GET /api/jobs`: lists jobs and statistics.
 - `GET /api/jobs/:id`: retrieves a job.
 - `DELETE /api/jobs/:id`: cancels or deletes a job.
 - `POST /api/jobs/:id/restart`: administratively restarts a job and responds with HTTP 202.
-- `GET /api/jobs/:id/download`: downloads the completed video or audio file with HTTP range support.
+- `POST /api/jobs/:id/download-access`: creates a short-lived, job-scoped HttpOnly download grant after bearer authentication.
+- `GET /api/jobs/:id/download`: downloads the completed video, audio, or subtitle file with HTTP range support.
 - `GET /api/media/:id`: opaque proxy for previews, manifests, and segments.
 - `GET /api/health`: status, versions, queue, retention, and dependencies.
 
@@ -255,7 +328,7 @@ LICENSE          MIT license for project-owned code
 9. FFmpeg trims and converts the range using the selected server-owned profile.
 10. Download the result from the card or panel.
 
-MP4, M4V, MOV, and WebM files up to 12 hours are supported. The default per-file limit is 2 GB and is configured with `MAX_UPLOAD_GB`. The temporary source remains attached to the job to allow an administrative restart and is removed when the job is deleted or expires. Incomplete uploads are also removed.
+MP4, M4V, MOV, and WebM files up to 12 hours are supported. The default per-file limit is 2 GiB, configured with `MAX_UPLOAD_GB` when `UPLOAD_LIMIT_ENABLED=true`. Set the flag to `false` to remove that cap while preserving the total storage quota. The temporary source remains attached to the job to allow an administrative restart and is removed when the job is deleted or expires. Incomplete uploads are also removed.
 
 The preview uses a browser-local `blob:` URL. Uploads require the `x-vdownloader-upload: 1` header, which blocks simple cross-origin requests. Internal file paths never appear in responses.
 
@@ -279,6 +352,40 @@ single-source upload contract requires `x-vdownloader-audio: 1` plus the regular
 binary envelope whose JSON prefix declares only bounded names, sizes, times,
 format, and codec. The server maps only the first audio stream from each source
 and never accepts a client-provided file path or FFmpeg argument.
+
+## Export or generate subtitles
+
+Select **Export subtitles**, then choose one source and method:
+
+1. For YouTube, paste a supported video URL, select **Find subtitle tracks**,
+   and choose a published or automatic track returned by the analysis.
+2. For a local MP4, M4V, MOV, or WebM video, choose **Extract track from video**
+   and the embedded subtitle-track number. To create new captions, choose
+   **Generate from audio or video** and select a supported video or an MP3,
+   M4A, AAC, WAV, FLAC, OGG, or Opus audio file, then choose the spoken
+   language and Whisper accuracy profile.
+3. Select the desired range and SRT or WebVTT, then export or generate.
+4. Success notices clear after eight seconds. Once a subtitle download starts,
+   its inline result clears while the persistent Download Center job remains
+   available for another download until normal expiration or manual removal.
+
+Subtitle downloads keep the source media base name: for example,
+`Training session.mp4` becomes `Training session.srt`, and `Interview.mp3`
+becomes `Interview.srt`. Choosing WebVTT uses the same base name with `.vtt`.
+Unsafe path/control characters are replaced while spaces, case, and supported
+accents are preserved.
+4. The result uses the same persistent queue, owner isolation, restart,
+   expiration, quota, authenticated download, and cleanup behavior as media jobs.
+
+Speech-to-text runs in an isolated Node worker through Transformers.js and
+Whisper. FFmpeg first creates temporary mono 16 kHz PCM inside the job area;
+the worker reads it locally and removes it after processing. The first run
+downloads the selected model into `data/models`; later jobs reuse that cache.
+Long inputs report progress after each internal overlapping 30-second Whisper
+chunk, so CPU-bound inference no longer appears frozen after model loading.
+Set `TRANSCRIPTION_ALLOW_MODEL_DOWNLOAD=false` after preloading models for an
+offline installation. YouTube timed-text URLs remain server-side behind an
+opaque selection.
 
 ### Identity protection
 
@@ -337,6 +444,13 @@ in `ACCESS_TOKENS_JSON`, and either built-in TLS or
 `TRUSTED_HTTPS_PROXY=true`. Profiles provide `user` or `admin` authorization,
 job ownership, and active-job limits. Browser tokens are kept in
 `sessionStorage`, never URLs or persistent history.
+
+When a user selects **Download**, the interface exchanges that bearer
+authorization for a short-lived HttpOnly cookie restricted to the selected
+job's download path. The file then streams through the browser's native
+download manager with HTTP Range support; JavaScript never builds a complete
+in-memory Blob. Selecting Download again refreshes the grant while the job is
+still retained.
 
 This is a lightweight private-server security model, not a full account
 system. For public Internet exposure, use a hardened reverse proxy or identity
@@ -425,3 +539,15 @@ to the server gateway; the local application does not read them automatically.
 ## DOC-STD-20261002 — Documentation navigation
 
 Use the [documentation map](docs/README.md) for authoritative sources, reading paths and project-specific maintenance rules.
+
+## Upload preview configuration
+
+The editor reads current size limits from `GET /api/upload-config` before validating a selection. This endpoint exposes only three size settings, requires no native bearer token, and retains HTTPS, rate limiting and the external demo gate. Diagnostics and exports still require the native access token. A failed settings request shows a retry message instead of inventing a 2 GiB limit.
+
+## Explicit access validation
+
+Paste the complete native token into **Task administration > Access token**, then select **Validate access**. Typing alone never submits credentials. During editing, API polling and exports pause. HTTP 429 pauses API polling for Retry-After (up to the existing 15-minute authentication cooldown); a blocked check is not reported as missing FFmpeg. The demo password and native token remain separate.
+
+## Visible access-validation results
+
+Access validation shows a full-width persistent result: checking, success, rejection, empty input, demo-session expiry, cooldown or connection failure. Only successfully validated tokens are saved for the tab. In the private VPS env, `ADMIN_TOKEN` is a separate legacy administrative credential; remote access uses the `token` value within `ACCESS_TOKENS_JSON`. A rejected token is not re-sent during export.

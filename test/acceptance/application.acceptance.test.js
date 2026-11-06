@@ -12,10 +12,45 @@ test('the primary user journey is present in both interface languages', async ()
 
   for (const key of [
     'search.action',
-    'local.select',
-    'local.exportClip',
+    'guided.title',
+    'guided.video',
+    'guided.audio',
+    'guided.subtitle',
+    'guided.identity',
+    'batch.toggle',
+    'batch.complete',
+    'remote.chooseResult',
+    'remote.createVideo',
+    'preset.recommended',
+    'preset.recommendedAudio',
+    'actions.createAnother',
+    'job.stage.downloading',
+    'tools.video.title',
+    'tools.extract.title',
+    'tools.audio.title',
+    'tools.subtitle.title',
+    'tools.step.process',
+    'local.videoSelect',
+    'local.createVideo',
+    'local.selectBeforeExport',
+    'video.exportMode',
+    'video.extractAudio',
+    'video.extractButton',
+    'audio.videoRedirect',
+    'youtube.audio.title',
+    'youtube.audio.export',
+    'audio.mixedVideoSelection',
     'audio.select',
-    'audio.export',
+    'audio.create',
+    'summary.template',
+    'subtitle.export',
+    'subtitle.modeGenerate',
+    'subtitle.selectMedia',
+    'subtitle.videoRequired',
+    'subtitle.unsupportedMedia',
+    'subtitle.transcriptionLanguage',
+    'subtitle.notFound',
+    'audio.selectBeforeExport',
     'audio.codec',
     'video.videoCodec',
     'downloads.title',
@@ -25,15 +60,60 @@ test('the primary user journey is present in both interface languages', async ()
     assert.equal(hasTranslation(key, 'en'), true, `Missing English acceptance key: ${key}`);
   }
   assert.match(html, /href="\/docs\.html"/);
+  assert.match(html, /class="guided-flow"/);
+  assert.match(html, /id="batch-mode"/);
+  assert.match(html, /id="video-urls"/);
   assert.match(app, /\/api\/analyze/);
   assert.match(app, /\/api\/upload-jobs/);
+  assert.match(app, /\/api\/video-audio-jobs/);
+  assert.match(app, /\/api\/remote-audio-jobs/);
+  assert.match(app, /function createRemoteSubtitleControls\(video, jobsArea\)/);
+  assert.match(app, /className = 'quality-presets'/);
+  assert.match(app, /className = 'job-stage-rail'/);
   assert.match(app, /\/api\/audio-jobs/);
   assert.match(app, /\/api\/audio-join-jobs/);
+  assert.match(app, /\/api\/subtitle-jobs/);
+  assert.match(app, /\/api\/subtitle-upload-jobs/);
+  assert.match(app, /\/api\/transcription-jobs/);
   assert.match(html, /id="local-audio-file"/);
+  assert.match(html, /id="local-tool-video"[^>]+data-local-tool="video"/);
+  assert.match(html, /id="local-tool-extract"[^>]+data-local-tool="extract"/);
+  assert.match(html, /id="local-tool-audio"[^>]+data-local-tool="audio"/);
+  assert.match(html, /id="local-tool-subtitle"[^>]+data-local-tool="subtitle"/);
+  assert.match(html, /id="local-video-tool-card"/);
+  assert.match(html, /id="local-audio-tool-card"[^>]+hidden/);
+  assert.match(html, /id="subtitle-tool-card"[^>]+hidden/);
+  assert.match(html, /id="subtitle-track"/);
+  assert.match(html, /id="subtitle-video-file"/);
+  assert.match(html, /id="subtitle-video-file"[^>]+accept="[^"]*\.mp4/);
+  assert.match(html, /id="subtitle-audio-preview"/);
+  assert.match(html, /id="subtitle-mode-generate"/);
+  assert.ok(
+    html.indexOf('id="subtitle-mode-generate"') < html.indexOf('id="subtitle-video-file"'),
+    'The generation method must be chosen before the local media picker'
+  );
+  assert.match(app, /SUBTITLE_AUDIO_EXTENSIONS = new Set\(\['\.mp3'.+'\.opus'\]\)/);
+  assert.match(html, /id="subtitle-transcription-language"/);
+  assert.match(html, /id="local-export-summary"/);
+  assert.match(html, /id="audio-export-summary"/);
+  assert.doesNotMatch(html, /id="extract-audio-from-video"/);
   assert.match(html, /id="audio-output-format"/);
   assert.match(html, /id="audio-output-codec"/);
   assert.match(html, /id="audio-source-list"/);
   assert.match(html, /id="video-output-codec"/);
+  assert.match(html, /id="local-export-mode"/);
+  assert.match(html, /id="video-audio-output-format"/);
+  assert.match(html, /id="video-audio-output-codec"/);
+  assert.match(html, /id="video-audio-output-bitrate"/);
+  assert.match(app, /function selectLocalTool\(tool/);
+  assert.match(app, /localExportMode\.value = extracting \? 'audio' : 'video'/);
+  assert.match(app, /function updateLocalExportSummary\(\)/);
+  assert.match(app, /function updateAudioExportSummary\(\)/);
+  assert.doesNotMatch(app, /function chooseVideoForAudioExtraction\(\)/);
+  assert.match(app, /await loadSelectedLocalVideo\(videoFiles\[0\]\)/);
+  assert.match(app, /addEventListener\('change', \(\) => loadSelectedLocalVideo\(\)\)/);
+  assert.doesNotMatch(app, /localVideoFile\.click\(\)/);
+  assert.match(app, /localVideoFile\.value = ''/);
   assert.match(html, /id="identity-edit"/);
   assert.match(html, /id="identity-add"/);
   assert.match(html, /id="identity-reviewed"/);

@@ -6,7 +6,7 @@
   <meta name="description" content="vDownloader downloads supported videos and provides local video trimming and audio transcoding tools.">
   <title>vDownloader</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=9">
+  <link rel="stylesheet" href="/styles.css?v=33">
 </head>
 <body>
   <main class="shell">
@@ -30,6 +30,38 @@
       <h1><span data-i18n="hero.title.before">Tu video, en la</span><br><em data-i18n="hero.title.emphasis">calidad que prefieras.</em></h1>
       <p class="intro" data-i18n="hero.intro">Descarga videos compatibles o usa las herramientas locales para recortar video y convertir audio.</p>
 
+      <section class="guided-flow" aria-labelledby="guided-title">
+        <span class="guided-eyebrow" data-i18n="guided.eyebrow">Inicio rápido</span>
+        <h2 id="guided-title" data-i18n="guided.title">¿Qué quieres obtener?</h2>
+        <p data-i18n="guided.description">Elige un resultado y te mostraremos únicamente los pasos necesarios.</p>
+        <div class="guided-goals" role="group" aria-label="Resultado deseado" data-i18n-aria="guided.aria">
+          <button class="guided-goal is-active" type="button" data-guided-goal="video" aria-pressed="true">
+            <b aria-hidden="true">▶</b><span data-i18n="guided.video">Video</span><small data-i18n="guided.videoHint">Calidad compatible</small>
+          </button>
+          <button class="guided-goal" type="button" data-guided-goal="audio" aria-pressed="false">
+            <b aria-hidden="true">♫</b><span data-i18n="guided.audio">Solo audio</span><small data-i18n="guided.audioHint">MP3, M4A y más</small>
+          </button>
+          <button class="guided-goal" type="button" data-guided-goal="subtitle" aria-pressed="false">
+            <b aria-hidden="true">CC</b><span data-i18n="guided.subtitle">Subtítulos</span><small data-i18n="guided.subtitleHint">SRT o WebVTT</small>
+          </button>
+          <button class="guided-goal" type="button" data-guided-goal="identity" aria-pressed="false">
+            <b aria-hidden="true">▦</b><span data-i18n="guided.identity">Proteger identidad</span><small data-i18n="guided.identityHint">Archivo local</small>
+          </button>
+        </div>
+        <div class="guided-source-actions">
+          <button id="guided-use-link" type="button"><span data-i18n="guided.useLink">Usar un enlace</span><b aria-hidden="true">→</b></button>
+          <button id="guided-use-local" class="secondary-action" type="button"><span data-i18n="guided.useLocal">Usar un archivo local</span><b aria-hidden="true">↓</b></button>
+        </div>
+        <ol class="guided-steps" aria-label="Flujo de creación" data-i18n-aria="guided.stepsAria">
+          <li class="is-current"><b>1</b><span data-i18n="guided.step.source">Origen</span></li>
+          <li><b>2</b><span data-i18n="guided.step.result">Resultado</span></li>
+          <li><b>3</b><span data-i18n="guided.step.edit">Editar</span></li>
+          <li><b>4</b><span data-i18n="guided.step.quality">Calidad</span></li>
+          <li><b>5</b><span data-i18n="guided.step.create">Crear</span></li>
+        </ol>
+        <p id="guided-hint" class="guided-hint" data-i18n="guided.hint.video">Pega un enlace o selecciona un video de tu equipo.</p>
+      </section>
+
       <form id="analyze-form" class="search-card">
         <label for="video-url" data-i18n="search.label">Enlace del video</label>
         <div class="input-row">
@@ -38,21 +70,60 @@
                  placeholder="Pega un enlace de YouTube u otro sitio compatible…" data-i18n-placeholder="search.placeholder">
           <button id="submit-button" type="submit"><span data-i18n="search.action">Analizar</span><b aria-hidden="true">→</b></button>
         </div>
+        <div class="batch-controls">
+          <label><input id="batch-mode" type="checkbox"> <span data-i18n="batch.toggle">Analizar varios enlaces</span></label>
+          <span data-i18n="batch.limit">Hasta 10 enlaces, uno por línea.</span>
+        </div>
+        <textarea id="video-urls" rows="5" hidden spellcheck="false" placeholder="https://...&#10;https://..." data-i18n-placeholder="batch.placeholder"></textarea>
         <p id="form-message" class="message" role="status" aria-live="polite"></p>
       </form>
 
-      <section class="local-upload-card" aria-labelledby="local-upload-title">
+      <section class="local-tool-chooser" aria-labelledby="local-tools-title">
+        <span data-i18n="tools.eyebrow">Herramientas locales</span>
+        <h2 id="local-tools-title" data-i18n="tools.title">¿Qué quieres crear?</h2>
+        <p data-i18n="tools.description">Elige una tarea. Cada opción muestra únicamente los controles necesarios.</p>
+        <div class="local-tool-grid" role="group" aria-label="Herramientas locales" data-i18n-aria="tools.aria">
+          <button id="local-tool-video" class="local-tool-option is-active" type="button" data-local-tool="video" aria-pressed="true">
+            <span aria-hidden="true">01</span>
+            <strong data-i18n="tools.video.title">Crear un video</strong>
+            <small data-i18n="tools.video.description">Recorta y cambia formato o códecs.</small>
+          </button>
+          <button id="local-tool-extract" class="local-tool-option" type="button" data-local-tool="extract" aria-pressed="false">
+            <span aria-hidden="true">02</span>
+            <strong data-i18n="tools.extract.title">Extraer audio de un video</strong>
+            <small data-i18n="tools.extract.description">Obtén MP3, M4A, OGG, Opus, FLAC o WAV.</small>
+          </button>
+          <button id="local-tool-audio" class="local-tool-option" type="button" data-local-tool="audio" aria-pressed="false">
+            <span aria-hidden="true">03</span>
+            <strong data-i18n="tools.audio.title">Editar archivos de audio</strong>
+            <small data-i18n="tools.audio.description">Recorta, une y convierte uno o varios audios.</small>
+          </button>
+          <button id="local-tool-subtitle" class="local-tool-option" type="button" data-local-tool="subtitle" aria-pressed="false">
+            <span aria-hidden="true">04</span>
+            <strong data-i18n="tools.subtitle.title">Exportar subtítulos</strong>
+            <small data-i18n="tools.subtitle.description">Descarga subtítulos existentes en SRT o WebVTT.</small>
+          </button>
+        </div>
+      </section>
+
+      <section id="local-video-tool-card" class="local-upload-card" aria-labelledby="local-upload-title">
         <div class="local-upload-header">
           <div>
-            <span data-i18n="local.eyebrow">Editor local</span>
-            <h2 id="local-upload-title" data-i18n="local.title">Recorta un archivo de tu equipo</h2>
-            <p data-i18n="local.description">La vista previa permanece en tu navegador. El archivo se carga temporalmente solo cuando presionas Exportar.</p>
+            <span id="local-tool-eyebrow" data-i18n="local.videoEyebrow">Herramienta de video</span>
+            <h2 id="local-upload-title" data-i18n="local.videoTitle">Recorta o convierte un video</h2>
+            <p id="local-tool-description" data-i18n="local.videoDescription">Elige el intervalo, formato y códecs del nuevo video.</p>
           </div>
           <label class="local-file-picker" for="local-video-file">
-            <span data-i18n="local.select">Seleccionar video</span>
+            <span id="local-video-select-label" data-i18n="local.videoSelect">Seleccionar video</span>
             <input id="local-video-file" type="file" accept=".mp4,.m4v,.mov,.webm,video/mp4,video/quicktime,video/webm" hidden>
           </label>
         </div>
+        <ol class="tool-steps" aria-label="Pasos de la herramienta" data-i18n-aria="tools.stepsAria">
+          <li><b>1</b><span data-i18n="tools.step.select">Seleccionar</span></li>
+          <li><b>2</b><span data-i18n="tools.step.range">Elegir intervalo</span></li>
+          <li><b>3</b><span data-i18n="tools.step.format">Configurar salida</span></li>
+          <li><b>4</b><span data-i18n="tools.step.process">Procesar</span></li>
+        </ol>
         <p id="local-upload-message" class="local-upload-message" role="status" aria-live="polite"></p>
         <div id="local-editor" class="local-editor" hidden>
           <div class="local-preview-stage">
@@ -63,7 +134,16 @@
             <strong id="local-file-name"></strong>
             <span id="local-file-meta"></span>
             <div id="local-clip-mount"></div>
-            <div class="audio-output-settings video-output-settings">
+            <div class="audio-output-settings local-export-mode-settings" hidden>
+              <label for="local-export-mode">
+                <span data-i18n="video.exportMode">Resultado</span>
+                <select id="local-export-mode">
+                  <option value="video" data-i18n="video.exportVideo">Video convertido</option>
+                  <option value="audio" data-i18n="video.extractAudio">Solo audio</option>
+                </select>
+              </label>
+            </div>
+            <div id="video-output-settings" class="audio-output-settings video-output-settings">
               <label for="video-output-format">
                 <span data-i18n="video.outputFormat">Formato de salida</span>
                 <select id="video-output-format">
@@ -83,7 +163,35 @@
               </label>
             </div>
             <p id="video-output-hint" class="audio-output-hint" data-i18n="video.outputHint">H.264 ofrece mayor compatibilidad; H.265 y VP9 reducen el tamaño pero requieren más tiempo.</p>
-            <section class="identity-card" aria-labelledby="identity-title">
+            <div id="video-audio-extraction-settings" class="audio-output-settings" hidden>
+              <label for="video-audio-output-format">
+                <span data-i18n="audio.outputFormat">Formato de salida</span>
+                <select id="video-audio-output-format">
+                  <option value="mp3">MP3</option>
+                  <option value="m4a">M4A / AAC</option>
+                  <option value="ogg">OGG</option>
+                  <option value="opus">Opus</option>
+                  <option value="flac">FLAC</option>
+                  <option value="wav">WAV</option>
+                </select>
+              </label>
+              <label for="video-audio-output-codec">
+                <span data-i18n="audio.codec">Códec</span>
+                <select id="video-audio-output-codec"></select>
+              </label>
+              <label for="video-audio-output-bitrate">
+                <span data-i18n="audio.bitrate">Calidad del audio</span>
+                <select id="video-audio-output-bitrate">
+                  <option value="96">96 kbps</option>
+                  <option value="128">128 kbps</option>
+                  <option value="192" selected>192 kbps</option>
+                  <option value="256">256 kbps</option>
+                  <option value="320">320 kbps</option>
+                </select>
+              </label>
+            </div>
+            <p id="video-audio-extraction-hint" class="audio-output-hint" data-i18n="video.audioExtractionHint" hidden>Extrae únicamente la pista de audio del intervalo seleccionado. FLAC y WAV no usan tasa de bits.</p>
+            <section id="identity-card" class="identity-card" aria-labelledby="identity-title">
               <div class="identity-heading">
                 <div>
                   <span data-i18n="identity.eyebrow">Nueva función</span>
@@ -132,24 +240,34 @@
                 <p id="identity-message" class="identity-message" role="status" aria-live="polite"></p>
               </div>
             </section>
-            <button id="local-export-button" type="button" data-i18n="local.exportClip">Exportar recorte</button>
+            <div id="local-export-summary" class="export-summary" hidden>
+              <span data-i18n="summary.label">Resultado</span>
+              <strong id="local-export-summary-text"></strong>
+            </div>
+            <button id="local-export-button" type="button" data-i18n="local.createVideo">Crear video</button>
             <div id="local-jobs-area" class="jobs-area"></div>
           </div>
         </div>
       </section>
 
-      <section class="local-upload-card audio-tool-card" aria-labelledby="audio-tool-title">
+      <section id="local-audio-tool-card" class="local-upload-card audio-tool-card" aria-labelledby="audio-tool-title" hidden>
         <div class="local-upload-header">
           <div>
             <span data-i18n="audio.eyebrow">Herramienta de audio</span>
             <h2 id="audio-tool-title" data-i18n="audio.title">Recorta, une y convierte audios</h2>
-            <p data-i18n="audio.description">Selecciona uno o varios audios, ajusta cada intervalo y elige su formato y códec de salida.</p>
+            <p data-i18n="audio.description">Trabaja con uno o varios archivos que ya sean audio.</p>
           </div>
           <label class="local-file-picker" for="local-audio-file">
             <span data-i18n="audio.select">Seleccionar audios</span>
             <input id="local-audio-file" type="file" multiple accept=".mp3,.m4a,.aac,.wav,.flac,.ogg,.opus,audio/mpeg,audio/mp4,audio/aac,audio/wav,audio/flac,audio/ogg,audio/opus" hidden>
           </label>
         </div>
+        <ol class="tool-steps" aria-label="Pasos de la herramienta" data-i18n-aria="tools.stepsAria">
+          <li><b>1</b><span data-i18n="tools.step.select">Seleccionar</span></li>
+          <li><b>2</b><span data-i18n="tools.step.range">Elegir intervalo</span></li>
+          <li><b>3</b><span data-i18n="tools.step.format">Configurar salida</span></li>
+          <li><b>4</b><span data-i18n="tools.step.process">Procesar</span></li>
+        </ol>
         <p id="audio-upload-message" class="local-upload-message" role="status" aria-live="polite"></p>
         <div id="audio-editor" class="local-editor audio-editor" hidden>
           <div class="audio-preview-stage">
@@ -188,10 +306,118 @@
               </label>
             </div>
             <p id="audio-output-hint" class="audio-output-hint" data-i18n="audio.compressedHint">El formato limita los códecs compatibles. FLAC y WAV no usan tasa de bits.</p>
-            <button id="audio-export-button" type="button" data-i18n="audio.export">Exportar audio</button>
+            <div id="audio-export-summary" class="export-summary" hidden>
+              <span data-i18n="summary.label">Resultado</span>
+              <strong id="audio-export-summary-text"></strong>
+            </div>
+            <button id="audio-export-button" type="button" data-i18n="audio.create">Crear audio</button>
             <div id="audio-jobs-area" class="jobs-area"></div>
           </div>
         </div>
+      </section>
+
+      <section id="subtitle-tool-card" class="local-upload-card subtitle-tool-card" aria-labelledby="subtitle-tool-title" hidden>
+        <div class="local-upload-header">
+          <div>
+            <span data-i18n="subtitle.eyebrow">Herramienta de subtítulos</span>
+            <h2 id="subtitle-tool-title" data-i18n="subtitle.title">Exporta o genera subtítulos</h2>
+            <p data-i18n="subtitle.description">Exporta pistas existentes o genera subtítulos automáticamente desde un video o audio local.</p>
+          </div>
+        </div>
+        <ol class="tool-steps" aria-label="Pasos de la herramienta" data-i18n-aria="tools.stepsAria">
+          <li><b>1</b><span data-i18n="subtitle.step.source">Elegir fuente</span></li>
+          <li><b>2</b><span data-i18n="subtitle.step.track">Elegir pista</span></li>
+          <li><b>3</b><span data-i18n="subtitle.step.format">Elegir formato</span></li>
+          <li><b>4</b><span data-i18n="subtitle.step.export">Exportar</span></li>
+        </ol>
+        <div class="subtitle-source-tabs" role="group" aria-label="Origen de los subtítulos" data-i18n-aria="subtitle.sourceAria">
+          <button id="subtitle-source-youtube" class="secondary-action is-active" type="button" aria-pressed="true" data-i18n="subtitle.sourceYoutube">Video de YouTube</button>
+          <button id="subtitle-source-local" class="secondary-action" type="button" aria-pressed="false" data-i18n="subtitle.sourceLocal">Archivo local</button>
+        </div>
+        <div id="subtitle-youtube-panel" class="subtitle-source-panel">
+          <form id="subtitle-url-form" class="subtitle-url-form">
+            <label for="subtitle-url" data-i18n="subtitle.urlLabel">Enlace de YouTube</label>
+            <div class="input-row">
+              <span class="link-icon" aria-hidden="true">↗</span>
+              <input id="subtitle-url" type="url" required autocomplete="url" spellcheck="false" placeholder="Pega un enlace individual de YouTube…" data-i18n-placeholder="subtitle.urlPlaceholder">
+              <button id="subtitle-analyze-button" type="submit" data-i18n="subtitle.analyze">Buscar subtítulos</button>
+            </div>
+          </form>
+          <div id="subtitle-remote-editor" class="subtitle-config" hidden>
+            <strong id="subtitle-remote-title"></strong>
+            <div class="audio-output-settings subtitle-output-settings">
+              <label for="subtitle-track">
+                <span data-i18n="subtitle.track">Pista disponible</span>
+                <select id="subtitle-track"></select>
+              </label>
+              <label for="subtitle-remote-format">
+                <span data-i18n="subtitle.outputFormat">Formato de salida</span>
+                <select id="subtitle-remote-format"><option value="srt">SRT</option><option value="vtt">WebVTT</option></select>
+              </label>
+            </div>
+            <div id="subtitle-remote-summary" class="export-summary" hidden><span data-i18n="summary.label">Resultado</span><strong id="subtitle-remote-summary-text"></strong></div>
+            <button id="subtitle-remote-export" type="button" data-i18n="subtitle.export">Exportar subtítulos</button>
+          </div>
+        </div>
+        <div id="subtitle-local-panel" class="subtitle-source-panel" hidden>
+          <div class="subtitle-source-tabs subtitle-local-modes" role="group" aria-label="Método para obtener subtítulos" data-i18n-aria="subtitle.localModeAria">
+            <button id="subtitle-mode-existing" class="secondary-action is-active" type="button" aria-pressed="true" data-i18n="subtitle.modeExisting">Extraer pista de un video</button>
+            <button id="subtitle-mode-generate" class="secondary-action" type="button" aria-pressed="false" data-i18n="subtitle.modeGenerate">Generar desde audio o video</button>
+          </div>
+          <label class="local-file-picker subtitle-local-picker" for="subtitle-video-file">
+            <span id="subtitle-local-picker-label" data-i18n="subtitle.selectVideo">Seleccionar video local</span>
+            <input id="subtitle-video-file" type="file" accept=".mp4,.m4v,.mov,.webm,video/mp4,video/quicktime,video/webm" hidden>
+          </label>
+          <div id="subtitle-local-editor" class="local-editor" hidden>
+            <div class="local-preview-stage">
+              <video id="subtitle-video-preview" class="local-video-preview" controls preload="metadata" playsinline></video>
+              <audio id="subtitle-audio-preview" class="subtitle-audio-preview" controls preload="metadata" hidden></audio>
+            </div>
+            <div class="local-editor-body">
+              <strong id="subtitle-local-name"></strong>
+              <span id="subtitle-local-meta"></span>
+              <div id="subtitle-clip-mount"></div>
+              <div class="audio-output-settings subtitle-output-settings">
+                <label id="subtitle-local-track-field" for="subtitle-local-track">
+                  <span data-i18n="subtitle.embeddedTrack">Pista integrada</span>
+                  <select id="subtitle-local-track">
+                    <option value="0" data-i18n="subtitle.trackNumber1">Pista 1</option><option value="1" data-i18n="subtitle.trackNumber2">Pista 2</option><option value="2" data-i18n="subtitle.trackNumber3">Pista 3</option><option value="3" data-i18n="subtitle.trackNumber4">Pista 4</option>
+                  </select>
+                </label>
+                <label for="subtitle-local-format">
+                  <span data-i18n="subtitle.outputFormat">Formato de salida</span>
+                  <select id="subtitle-local-format"><option value="srt">SRT</option><option value="vtt">WebVTT</option></select>
+                </label>
+              </div>
+              <div id="subtitle-transcription-settings" class="audio-output-settings subtitle-output-settings transcription-settings" hidden>
+                <label for="subtitle-transcription-language">
+                  <span data-i18n="subtitle.transcriptionLanguage">Idioma hablado</span>
+                  <select id="subtitle-transcription-language">
+                    <option value="auto" data-i18n="subtitle.languageAuto">Detectar automáticamente</option>
+                    <option value="es" data-i18n="language.spanish">Español</option>
+                    <option value="en" data-i18n="language.english">Inglés</option>
+                    <option value="pt" data-i18n="language.portuguese">Portugués</option>
+                    <option value="fr" data-i18n="language.french">Francés</option>
+                    <option value="de" data-i18n="language.german">Alemán</option>
+                    <option value="it" data-i18n="language.italian">Italiano</option>
+                  </select>
+                </label>
+                <label for="subtitle-transcription-model">
+                  <span data-i18n="subtitle.transcriptionPrecision">Precisión</span>
+                  <select id="subtitle-transcription-model">
+                    <option value="fast" data-i18n="subtitle.modelFast">Rápida · Whisper Tiny</option>
+                    <option value="balanced" data-i18n="subtitle.modelBalanced">Equilibrada · Whisper Base</option>
+                  </select>
+                </label>
+              </div>
+              <p id="subtitle-local-hint" class="audio-output-hint" data-i18n="subtitle.localHint">Selecciona la posición de la pista dentro del video. Si no existe, la tarea mostrará un mensaje claro sin modificar el archivo original.</p>
+              <div id="subtitle-local-summary" class="export-summary" hidden><span data-i18n="summary.label">Resultado</span><strong id="subtitle-local-summary-text"></strong></div>
+              <button id="subtitle-local-export" type="button" data-i18n="subtitle.export">Exportar subtítulos</button>
+            </div>
+          </div>
+        </div>
+        <p id="subtitle-message" class="local-upload-message" role="status" aria-live="polite"></p>
+        <div id="subtitle-jobs-area" class="jobs-area"></div>
       </section>
 
       <section id="result" class="result" aria-live="polite" hidden></section>
@@ -208,6 +434,8 @@
             <input id="admin-token" type="password" autocomplete="off" placeholder="Opcional en localhost" data-i18n-placeholder="admin.placeholder">
             <label for="access-token" data-i18n="security.accessToken">Token de acceso</label>
             <input id="access-token" type="password" autocomplete="off" placeholder="Solo para acceso remoto" data-i18n-placeholder="security.accessPlaceholder">
+            <button id="validate-access-token" type="button" data-i18n="security.validate">Validar acceso</button>
+            <p id="access-validation-result" class="access-validation-result" role="status" aria-live="polite" aria-atomic="true" hidden></p>
             <p id="admin-hint" data-i18n="admin.localHint">La administración local no requiere token.</p>
           </div>
         </details>
@@ -224,7 +452,7 @@
           </select>
           <select id="panel-provider-filter" data-i18n-aria="admin.filterProviderAria">
             <option value="" data-i18n="admin.allProviders">Todos los proveedores</option>
-            <option value="youtube">YouTube</option><option value="xvideos">XVideos</option><option value="pornhub">Pornhub</option><option value="xnxx">XNXX</option><option value="upload" data-i18n="provider.upload">Archivo local</option><option value="audio" data-i18n="provider.audio">Audio local</option>
+            <option value="youtube">YouTube</option><option value="xvideos">XVideos</option><option value="pornhub">Pornhub</option><option value="xnxx">XNXX</option><option value="upload" data-i18n="provider.upload">Archivo local</option><option value="audio" data-i18n="provider.audio">Audio local</option><option value="subtitle" data-i18n="provider.subtitle">Subtítulos locales</option>
           </select>
           <select id="panel-date-filter" data-i18n-aria="admin.filterDateAria">
             <option value="" data-i18n="admin.allDates">Todas las fechas</option>
@@ -259,6 +487,6 @@
     </footer>
   </main>
   <script src="/vendor/hls.min.js"></script>
-  <script src="/app.js?v=22" type="module"></script>
+  <script src="/app.js?v=40" type="module"></script>
 </body>
 </html>

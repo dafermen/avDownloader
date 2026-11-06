@@ -18,12 +18,13 @@ KillSignal=SIGTERM
 UMask=0077
 
 # The application tree and operating system remain read-only. Only persisted
-# jobs are writable; temporary FFmpeg files are redirected there by the app.
+# jobs and the reviewed speech-model cache are writable; temporary FFmpeg
+# files are redirected to the job directory by the app.
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/vdownloader/jobs
+ReadWritePaths=/var/lib/vdownloader/jobs /var/lib/vdownloader/models
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectKernelLogs=true

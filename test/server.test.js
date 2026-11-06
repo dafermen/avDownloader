@@ -14,9 +14,10 @@ import {
   parseVideoPage,
   parseXnxxPage,
   prepareJobForRestart,
-  server
+  server,
+  youtubeFormatSelector
 } from '../server.js';
-import { getYtDlpStatus, parseYoutubeInfo } from '../providers/youtube.js';
+import { getYtDlpStatus, parseYoutubeInfo, parseYoutubeSubtitleTracks } from '../providers/youtube.js';
 import { hasTranslation, resolveLanguage, translate } from '../public/i18n.js';
 
 test('keeps every visible interface key available in Spanish and English', async () => {
@@ -64,11 +65,11 @@ test('combina formatos adaptativos de YouTube con audio M4A', () => {
     thumbnail: 'https://i.ytimg.com/example.jpg',
     duration: 60,
     formats: [
-      { height: 360, ext: 'mp4', vcodec: 'avc1.42001E', acodec: 'mp4a.40.2', tbr: 500, filesize: 3_000_000, url: 'https://r1.googlevideo.com/combined.mp4' },
-      { height: 1080, ext: 'mp4', vcodec: 'avc1.640028', acodec: 'none', tbr: 2000, filesizeApprox: 15_000_000, url: 'https://r1.googlevideo.com/video.mp4' },
-      { ext: 'm4a', vcodec: 'none', acodec: 'mp4a.40.2', abr: 128, filesizeApprox: 1_000_000, url: 'https://r1.googlevideo.com/audio.m4a' },
-      { height: 2160, ext: 'webm', vcodec: 'vp9', acodec: 'none', url: 'https://r1.googlevideo.com/incompatible.webm' },
-      { height: 720, ext: 'mp4', vcodec: 'avc1.64001F', acodec: 'none', url: 'https://example.com/untrusted.mp4' }
+      { format_id: '18', height: 360, ext: 'mp4', vcodec: 'avc1.42001E', acodec: 'mp4a.40.2', tbr: 500, filesize: 3_000_000, url: 'https://r1.googlevideo.com/combined.mp4' },
+      { format_id: '137', height: 1080, ext: 'mp4', vcodec: 'avc1.640028', acodec: 'none', tbr: 2000, filesizeApprox: 15_000_000, url: 'https://r1.googlevideo.com/video.mp4' },
+      { format_id: '140', ext: 'm4a', vcodec: 'none', acodec: 'mp4a.40.2', abr: 128, filesizeApprox: 1_000_000, url: 'https://r1.googlevideo.com/audio.m4a' },
+      { format_id: '248', height: 2160, ext: 'webm', vcodec: 'vp9', acodec: 'none', url: 'https://r1.googlevideo.com/incompatible.webm' },
+      { format_id: '136', height: 720, ext: 'mp4', vcodec: 'avc1.64001F', acodec: 'none', url: 'https://example.com/untrusted.mp4' }
     ]
   };
   assert.deepEqual(parseYoutubeInfo(info), {
@@ -77,11 +78,40 @@ test('combina formatos adaptativos de YouTube con audio M4A', () => {
     thumbnail: 'https://i.ytimg.com/example.jpg',
     duration: 60,
     qualities: [
-      { label: '1080p', url: 'https://r1.googlevideo.com/video.mp4', type: 'mp4', audioUrl: 'https://r1.googlevideo.com/audio.m4a', estimatedSize: 16_000_000 },
-      { label: '360p', url: 'https://r1.googlevideo.com/combined.mp4', type: 'mp4', estimatedSize: 3_000_000 }
+      { label: '1080p', url: 'https://r1.googlevideo.com/video.mp4', type: 'mp4', formatId: '137', audioFormatId: '140', audioUrl: 'https://r1.googlevideo.com/audio.m4a', estimatedSize: 16_000_000 },
+      { label: '360p', url: 'https://r1.googlevideo.com/combined.mp4', type: 'mp4', formatId: '18', estimatedSize: 3_000_000 }
     ],
+    audioTrack: { url: 'https://r1.googlevideo.com/audio.m4a', type: 'mp4', formatId: '140', estimatedSize: 1_000_000 },
+    subtitleTracks: [],
     hlsUrl: null
   });
+});
+
+test('construye selectores yt-dlp seguros para video adaptativo y solo audio', () => {
+  assert.equal(youtubeFormatSelector({ mediaKind: 'video', youtubeFormatId: '137', youtubeAudioFormatId: '140' }), '137+140');
+  assert.equal(youtubeFormatSelector({ mediaKind: 'audio', youtubeFormatId: '140' }), '140');
+  assert.throws(
+    () => youtubeFormatSelector({ mediaKind: 'video', youtubeFormatId: '137;rm', youtubeAudioFormatId: '140' }),
+    /formato de YouTube/i
+  );
+});
+
+test('normaliza pistas de subtítulos de YouTube sin conservar URLs firmadas', () => {
+  const tracks = parseYoutubeSubtitleTracks({
+    subtitles: {
+      es: [{ ext: 'vtt', name: 'Español', url: 'https://www.youtube.com/api/timedtext?signature=secret' }]
+    },
+    automatic_captions: {
+      en: [{ ext: 'json3', name: 'English', url: 'https://www.youtube.com/api/timedtext?signature=automatic-secret' }],
+      live_chat: [{ ext: 'json', url: 'https://example.invalid/chat' }]
+    }
+  });
+  assert.deepEqual(tracks, [
+    { language: 'es', name: 'Español', automatic: false },
+    { language: 'en', name: 'English', automatic: true }
+  ]);
+  assert.equal(JSON.stringify(tracks).includes('timedtext'), false);
+  assert.equal(JSON.stringify(tracks).includes('secret'), false);
 });
 
 test('encuentra el ejecutable local y multiplataforma de yt-dlp', async () => {
@@ -102,12 +132,22 @@ test('oculta las URLs firmadas detrás de referencias opacas', () => {
       type: 'mp4',
       url: 'https://r1.googlevideo.com/signed-video?token=secret',
       audioUrl: 'https://r1.googlevideo.com/signed-audio?token=secret',
+      formatId: '137',
+      audioFormatId: '140',
       estimatedSize: 1234
-    }]
+    }],
+    audioTrack: {
+      url: 'https://r1.googlevideo.com/signed-audio?token=secret',
+      type: 'mp4',
+      formatId: '140',
+      estimatedSize: 456
+    }
   });
   assert.match(publicVideo.qualities[0].selectionId, /^[a-f0-9-]{36}$/i);
   assert.match(publicVideo.qualities[0].previewUrl, /^\/api\/media\/[a-f0-9-]{36}$/i);
   assert.equal(publicVideo.qualities[0].adaptive, true);
+  assert.match(publicVideo.audio.selectionId, /^[a-f0-9-]{36}$/i);
+  assert.equal(publicVideo.audio.estimatedSize, 456);
   assert.equal(JSON.stringify(publicVideo).includes('googlevideo.com'), false);
   assert.equal('url' in publicVideo.qualities[0], false);
   assert.equal('audioUrl' in publicVideo.qualities[0], false);
@@ -319,6 +359,7 @@ test('reinicia una tarea conservando origen, calidad y recorte', () => {
   };
   prepareJobForRestart(job, 200);
   assert.equal(job.status, 'queued');
+  assert.equal(job.stage, 'queued');
   assert.equal(job.needsRefresh, true);
   assert.equal(job.mediaUrl, null);
   assert.equal(job.audioUrl, null);

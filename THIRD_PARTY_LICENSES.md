@@ -11,6 +11,8 @@ advice and does not modify the original licenses.
 | [`ffmpeg-static`](https://www.npmjs.com/package/ffmpeg-static) | 5.2.0 | GPL-3.0-or-later | Provides the FFmpeg binary used to remux, trim, and convert audio. |
 | [`hls.js`](https://github.com/video-dev/hls.js) | 1.6.13 | Apache-2.0 | Plays HLS manifests in browsers that support Media Source Extensions. |
 | [`@mediapipe/tasks-vision`](https://www.npmjs.com/package/@mediapipe/tasks-vision) | 0.10.35 | Apache-2.0 | Detects faces locally in the browser for Identity protection. |
+| [`@huggingface/transformers`](https://github.com/huggingface/transformers.js) | 4.3.1 | Apache-2.0 | Runs local Whisper automatic speech recognition in an isolated Node worker. |
+| [`Xenova/whisper-tiny`](https://huggingface.co/Xenova/whisper-tiny) and [`Xenova/whisper-base`](https://huggingface.co/Xenova/whisper-base) | Downloaded on demand | Apache-2.0 | Quantized ONNX speech-to-text models cached in `TRANSCRIPTION_CACHE_DIR`; not committed to this repository. |
 | [BlazeFace Short Range](https://ai.google.dev/edge/mediapipe/solutions/vision/face_detector) | float16, revision 1 | Apache-2.0 (MediaPipe) | Local TFLite model used to locate faces; distributed in `public/models/`. |
 | [`youtube-dl-exec`](https://github.com/microlinkhq/youtube-dl-exec) | 3.0.22 | MIT | Adapts yt-dlp execution for Node.js; vDownloader uses the system tool on Linux. |
 | [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) | Independently updated | Unlicense; artifacts may include components under other licenses | Retrieves public YouTube metadata and formats. |
@@ -41,6 +43,15 @@ ISC, GPL, or other licensed components. On Linux, vDownloader runs the
 system-managed tool through `YT_DLP_PATH` or `PATH`; other development
 environments may use the artifact installed by npm. See the [official yt-dlp
 license section](https://github.com/yt-dlp/yt-dlp#license).
+
+### Transformers.js and Whisper models
+
+Transformers.js and the allowlisted Xenova Whisper model repositories declare
+Apache-2.0. The selected model is downloaded from Hugging Face on first use and
+cached locally; audio and transcript contents are not uploaded to Hugging Face.
+An offline operator can preload the artifacts and disable remote model loading.
+If model profiles or revisions change, review the new model card and license
+before distribution.
 
 ## CDNs and temporary links
 
@@ -91,11 +102,14 @@ of the requested operation.
 3. Do not copy `node_modules` between operating systems; run `npm ci` at the destination.
 4. Review the effective license of the exact FFmpeg and yt-dlp binaries being distributed.
 5. Provide license texts, attribution, and corresponding source when required by an artifact's license.
-6. Do not include videos, cookies, temporary tokens, or `data/jobs` files in a distribution.
+6. Do not include videos, cookies, temporary tokens, `data/jobs`, or cached
+   `data/models` artifacts in a distribution unless their notices and size are
+   deliberately handled.
 
 ## License for project-owned code
 
 Project-owned vDownloader code is distributed under the MIT license included in
 `LICENSE`. This license does not replace or modify the independent licenses of
-FFmpeg, HLS.js, MediaPipe, BlazeFace, youtube-dl-exec, yt-dlp, or their
+FFmpeg, HLS.js, MediaPipe, BlazeFace, Transformers.js, Whisper model artifacts,
+youtube-dl-exec, yt-dlp, or their
 components.

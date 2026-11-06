@@ -28,21 +28,37 @@ Identity protection coordinates, persisted job state, and child-process output.
   URLs, or arbitrary redirects.
 - Keep signed URLs in memory behind opaque UUIDs; never persist or log them.
 - Keep uploaded filenames informational and generate server-owned UUID paths.
-- Require distinct control headers for video upload, single-audio upload,
-  multi-audio join, tracking registration, and restart.
+- Require distinct control headers for video upload, video-to-audio extraction,
+  single-audio upload, multi-audio join, subtitle export, tracking registration,
+  and restart.
 - Keep container/codec pairs on server allowlists. Bound join metadata to 64
   KiB and 20 sources, verify exact byte accounting, stream media to UUID-owned
   files, and remove every partial or job-owned source on failure/cleanup.
 - Require `ADMIN_TOKEN` outside loopback.
 - Pass structured FFmpeg/yt-dlp arguments without an intervening shell.
+- Keep YouTube timed-text URLs server-side. Caption selections expose only
+  random UUIDs; local subtitle extraction accepts only a numeric stream ordinal
+  from the bounded range and SRT/WebVTT output IDs.
+- Require the dedicated transcription control header; allowlist language and
+  model profile; map model IDs server-side; keep uploaded audio and temporary
+  16 kHz PCM local; and delete PCM after success, failure, cancellation, or
+  cleanup. Treat model files as dependencies, not user-selected URLs.
 - Limit upload size, storage, clip duration, samples, coordinates, retries, and
   concurrency.
 - Serve HLS.js, MediaPipe, WASM, and the face model locally.
 - Keep remote mode disabled unless strong access profiles and HTTPS are ready.
 - Keep bearer and administrator tokens in process secrets and browser
   `sessionStorage`, never URLs, logs, persisted jobs, or local history.
+- Exchange bearer authorization for a random, short-lived download grant only
+  through the non-simple `x-vdownloader-download: 1` request. Keep that grant
+  in an HttpOnly, Secure-under-HTTPS, SameSite=Strict cookie scoped to one job's
+  download path; never put either credential in a URL or persist it.
+- Stream completed outputs through the native download manager with HTTP Range.
+  Do not buffer multi-gigabyte files in JavaScript Blobs to work around header
+  authentication.
 - Spawn FFmpeg without a shell, with a controlled working directory and reduced
-  environment. Use the supplied unprivileged systemd unit for Linux and add a
+  environment. Spawn the speech worker without a shell and pass only internal
+  paths plus validated identifiers. Use the supplied unprivileged systemd unit for Linux and add a
   container or stronger OS sandbox for a public hostile-media threat model.
 
 ## Remote configuration

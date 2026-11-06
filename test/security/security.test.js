@@ -86,12 +86,53 @@ test('administrative and upload endpoints require non-simple control headers', a
     );
     assert.equal(restart.status, 403);
 
+    const downloadAccess = await fetch(
+      `${application.baseUrl}/api/jobs/00000000-0000-4000-8000-000000000000/download-access`,
+      { method: 'POST' }
+    );
+    assert.equal(downloadAccess.status, 403);
+
     const upload = await fetch(`${application.baseUrl}/api/upload-jobs`, {
       method: 'POST',
       headers: { 'content-type': 'video/mp4' },
       body: new Uint8Array([0])
     });
     assert.equal(upload.status, 403);
+
+    const videoAudioExtraction = await fetch(`${application.baseUrl}/api/video-audio-jobs`, {
+      method: 'POST',
+      headers: { 'content-type': 'video/mp4' },
+      body: new Uint8Array([0])
+    });
+    assert.equal(videoAudioExtraction.status, 403);
+
+    const remoteAudioExtraction = await fetch(`${application.baseUrl}/api/remote-audio-jobs`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}'
+    });
+    assert.equal(remoteAudioExtraction.status, 403);
+
+    const localSubtitle = await fetch(`${application.baseUrl}/api/subtitle-upload-jobs`, {
+      method: 'POST',
+      headers: { 'content-type': 'video/mp4' },
+      body: new Uint8Array([0])
+    });
+    assert.equal(localSubtitle.status, 403);
+
+    const transcription = await fetch(`${application.baseUrl}/api/transcription-jobs`, {
+      method: 'POST',
+      headers: { 'content-type': 'video/mp4' },
+      body: new Uint8Array([0])
+    });
+    assert.equal(transcription.status, 403);
+
+    const remoteSubtitle = await fetch(`${application.baseUrl}/api/subtitle-jobs`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ selectionId: '00000000-0000-4000-8000-000000000000', outputFormat: 'srt' })
+    });
+    assert.equal(remoteSubtitle.status, 403);
 
     const audioUpload = await fetch(`${application.baseUrl}/api/audio-jobs`, {
       method: 'POST',

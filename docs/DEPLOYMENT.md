@@ -40,7 +40,8 @@ npm start
 Use the reviewed templates under `deploy/` as a starting point. They run the
 process through systemd as the unprivileged `vdownloader` account, make the
 application tree read-only, grant write access only to
-`/var/lib/vdownloader/jobs`, and terminate HTTPS through Nginx. Replace every
+`/var/lib/vdownloader/jobs` and `/var/lib/vdownloader/models`, and terminate
+HTTPS through Nginx. Replace every
 example path, domain, certificate, and token before installation.
 
 Remote access is fail-closed. Configure `REMOTE_ACCESS_ENABLED=true`, strong
@@ -72,6 +73,9 @@ Full directory, ownership, environment-file, and Nginx instructions are in
 Use `.env.example` as an inventory, not as a secret file. Production secrets
 belong in the service manager or secret store. At minimum review storage,
 upload, concurrency, retry, retention, tool paths, and `ADMIN_TOKEN`.
+Also review the transcription duration, model-cache path, and whether first-use
+model download is permitted. Preload Tiny/Base as the service user before
+setting `TRANSCRIPTION_ALLOW_MODEL_DOWNLOAD=false` for offline operation.
 
 ## Verification and rollback
 
@@ -84,7 +88,9 @@ After starting:
 4. Trim and join synthetic WAV sources, export every supported audio
    format/codec pair, and verify content type, duration, join order, decoding,
    administrative restart, all-source cleanup, and HTTP 206 resume.
-5. Confirm queue, cancellation, restart, cleanup, and storage metrics.
+5. Generate captions from a lawful spoken local clip with every enabled
+   Whisper profile, confirm cache reuse and PCM cleanup, and review SRT/WebVTT.
+6. Confirm queue, cancellation, restart, cleanup, and storage metrics.
 
 Keep the previous tested release available. A rollback must stop the candidate,
 restore the compatible application version, retain only schema-compatible safe

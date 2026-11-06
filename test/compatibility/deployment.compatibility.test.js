@@ -42,7 +42,7 @@ test('Linux deployment uses system multimedia tools and the deployment gate', as
   assert.match(systemdUnit, /^User=vdownloader$/m);
   assert.match(systemdUnit, /^NoNewPrivileges=true$/m);
   assert.match(systemdUnit, /^ProtectSystem=strict$/m);
-  assert.match(systemdUnit, /^ReadWritePaths=\/var\/lib\/vdownloader\/jobs$/m);
+  assert.match(systemdUnit, /^ReadWritePaths=\/var\/lib\/vdownloader\/jobs \/var\/lib\/vdownloader\/models$/m);
   assert.doesNotMatch(systemdUnit, /User=root/i);
   assert.match(nginxSite, /proxy_pass http:\/\/127\.0\.0\.1:5177/);
   assert.match(nginxSite, /X-Forwarded-For \$remote_addr/);

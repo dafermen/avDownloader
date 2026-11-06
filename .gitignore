@@ -13,5 +13,6 @@ coverage/
 reports/
 mutation-report/
 data/jobs/
+data/models/
 .DS_Store
 Thumbs.db

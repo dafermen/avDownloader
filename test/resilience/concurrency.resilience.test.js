@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { startTestServer } from '../helpers/http-server.js';
 
 test('the read-only API remains responsive under concurrent requests', async () => {
@@ -30,4 +31,13 @@ test('malformed requests do not prevent a subsequent valid request', async () =>
   } finally {
     await application.close();
   }
+});
+
+test('YouTube jobs preserve resumable parts and account for their storage', async () => {
+  const source = await readFile(new URL('../../server.js', import.meta.url), 'utf8');
+  assert.match(source, /'--continue'/);
+  assert.doesNotMatch(source, /'--force-overwrites'/);
+  assert.match(source, /job\.sourceSize = await youtubeStagingBytes\(job\.id\)/);
+  assert.match(source, /await removeYoutubeStagingFiles\(job\.id\)/);
+  assert.match(source, /stage: job\.stage \|\| null/);
 });

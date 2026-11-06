@@ -29,7 +29,7 @@ ignored by Git. CI runs the same gate on Ubuntu.
 | 5 | Fuzzing | `npm run test:fuzz`; send deterministic malformed and random input through URL trust boundaries |
 | 6 | Integration | `npm run test:integration`; exercise the real HTTP router and component boundaries |
 | 7 | Contract | `npm run test:contract`; preserve public JSON fields, status codes, and error shape |
-| 8 | End-to-end | `npm run test:e2e`; load the application, run real isolated WAV-to-MP3, two-source audio join, and MP4-to-WebM VP9/Opus journeys through HTTP; complete browser/media checks manually |
+| 8 | End-to-end | `npm run test:e2e`; load the application, run real isolated WAV-to-MP3, two-source audio join, MP4-to-WebM VP9/Opus, selected-range MP4-to-MP3 extraction, embedded-subtitle-to-SRT, and mock-model local-transcription journeys through HTTP; complete browser/media checks manually |
 | 9 | Regression | `npm run test:regression`; preserve fixes for hidden signed URLs and adaptive audio |
 | 10 | Security | `npm run test:security` plus `npm audit --omit=dev`; test SSRF and control headers, then audit runtime dependencies |
 | 11 | Concurrency and resilience | `npm run test:resilience`; exercise parallel reads and recovery after malformed requests |
@@ -83,6 +83,25 @@ video/audio codecs, decoding, content type, filename, restart behavior,
 all-source cleanup, and HTTP 206. Automated tests use synthetic tones and a
 synthetic audiovisual clip with isolated temporary `JOB_DIR` directories; they
 do not replace cross-browser/player testing of every accepted profile.
+
+Remote-flow evidence must exercise every quick-start goal, each output tab and
+preset, advanced audio settings, a mixed-success batch of several lawful URLs,
+the four visible processing stages, and every ready-state action. Interrupt one
+long YouTube download after measurable progress, verify its partial bytes count
+toward storage, restart the same job, and confirm yt-dlp continues it. Then
+verify that success, cancellation, expiration, and manual deletion leave no
+UUID-owned YouTube staging file.
+
+Subtitle evidence must cover a lawful YouTube video with published or automatic
+captions when available, a synthetic local video with an embedded text track,
+both SRT and WebVTT, a missing-track error, persistence/restart, cleanup, and a
+zero-byte-output regression check. Generated-subtitle evidence must additionally
+cover Tiny and Base first-use download/cache reuse, automatic and explicit
+language selection, speech and silence, a video without audio, long-range
+rejection, cancellation, restart, cleanup of temporary PCM, and output review
+against a lawful spoken fixture. The default E2E test substitutes a deterministic
+worker so CI does not download model weights; manual release evidence must run
+the real local engine.
 
 ## Test design rules
 

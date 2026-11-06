@@ -9,6 +9,7 @@ replace domains and paths before use. Do not expose the Node.js port directly.
 sudo useradd --system --home /var/lib/vdownloader --shell /usr/sbin/nologin vdownloader
 sudo install -d -o root -g root -m 0755 /opt/vdownloader/current
 sudo install -d -o vdownloader -g vdownloader -m 0700 /var/lib/vdownloader/jobs
+sudo install -d -o vdownloader -g vdownloader -m 0700 /var/lib/vdownloader/models
 sudo install -d -o root -g vdownloader -m 0750 /etc/vdownloader
 ```
 
@@ -21,6 +22,10 @@ to:
 PORT=5177
 HOST=127.0.0.1
 JOB_DIR=/var/lib/vdownloader/jobs
+TRANSCRIPTION_CACHE_DIR=/var/lib/vdownloader/models
+TRANSCRIPTION_ENABLED=true
+MAX_TRANSCRIPTION_MINUTES=180
+TRANSCRIPTION_ALLOW_MODEL_DOWNLOAD=true
 FFMPEG_PATH=ffmpeg
 YT_DLP_PATH=yt-dlp
 REMOTE_ACCESS_ENABLED=true
@@ -45,7 +50,8 @@ sudo journalctl -u vdownloader -f
 
 The unit runs without root privileges, restarts after failures, makes the
 application and operating system read-only, grants write access only to the job
-directory, and removes Linux capabilities. Confirm the FFmpeg build works under
+and model-cache directories, and removes Linux capabilities. Confirm FFmpeg and
+local Whisper inference work under
 these restrictions with lawful synthetic media before deployment.
 
 ## Nginx and HTTPS

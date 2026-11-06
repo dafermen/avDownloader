@@ -2,6 +2,8 @@ import { spawnSync } from 'node:child_process';
 
 const files = [
   'server.js',
+  'transcription-worker.js',
+  'upload-settings.js',
   'public/app.js',
   'public/i18n.js',
   'providers/index.js',

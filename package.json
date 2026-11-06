@@ -19,11 +19,11 @@
     "dev": "node --watch server.js",
     "test": "node --test",
     "test:acceptance": "node --test test/acceptance/application.acceptance.test.js",
-    "test:unit": "node --test test/unit/audio-metadata.test.js test/unit/providers-utils.test.js",
+    "test:unit": "node --test test/unit/audio-metadata.test.js test/unit/providers-utils.test.js test/unit/transcription-worker.test.js test/unit/upload-settings.test.js",
     "test:property": "node --test test/property/invariants.property.test.js",
     "test:mutation": "node scripts/mutation-check.js",
     "test:fuzz": "node --test test/fuzz/input.fuzz.test.js",
-    "test:integration": "node --test test/integration/http.integration.test.js",
+    "test:integration": "node --test test/integration/http.integration.test.js test/integration/large-upload.integration.test.js",
     "test:contract": "node --test test/contract/api.contract.test.js",
     "test:e2e": "node --test test/e2e/application.e2e.test.js test/e2e/audio-tool.e2e.test.js",
     "test:regression": "node --test test/regression/known-issues.regression.test.js",
@@ -39,6 +39,7 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.3.1",
     "@mediapipe/tasks-vision": "^0.10.35",
     "hls.js": "^1.6.13",
     "youtube-dl-exec": "^3.0.22"

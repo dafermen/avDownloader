@@ -14,15 +14,23 @@ for `journald`.
 - Queue depth and active jobs remain within configured concurrency.
 - `JOB_DIR` usage remains below quota.
 - Terminal jobs expire according to `JOB_TTL_MINUTES`.
+- Job retention starts at `completedAt`, so processing time does not consume the
+  ready-file window. Remote download grants are generated only when Download is
+  selected, expire after 30 minutes, and can be refreshed by selecting Download
+  again while the job remains retained.
 - Provider error rate does not indicate a parser or network regression.
 - No signed URL, token, cookie, internal path, or personal content appears in
   logs.
 - Administrative actions appear as sanitized `administrative_audit` JSON log
   events; the panel also exposes the latest bounded in-memory events.
 - Rate-limit and access-profile settings match expected private-server traffic.
-- Audio exports report provider `audio`, retain an allowlisted output profile
-  and ordered source list, and consume the same queue and storage budget as
-  video jobs. Restart and cleanup must cover every joined source.
+- Audio exports report provider `audio`, retain an allowlisted output profile,
+  and consume the same queue and storage budget as video jobs. Joined jobs keep
+  their ordered audio source list; video-to-audio jobs keep their UUID-owned
+  video source. Restart and cleanup must cover every retained source.
+- Generated subtitle jobs report provider `transcription`. Monitor the first
+  model download, cache size, CPU/RAM use, and temporary PCM space. Audio is
+  local; only public model artifacts are fetched from Hugging Face.
 - When Nginx is used, Node remains on loopback and forwarded addresses in logs
   match the actual remote client rather than the proxy or a supplied spoof.
 
@@ -34,8 +42,9 @@ library. If it is backed up for recovery, protect it as sensitive data, encrypt
 it, restrict access, and honor retention.
 
 On restart, unfinished remote jobs must refresh media links. Local jobs require
-their UUID source files to remain inside `JOB_DIR`; joined audio requires every
-ordered source or the recovered task must fail safely.
+their UUID source files to remain inside `JOB_DIR`; video-to-audio extraction
+requires its original video source, and joined audio requires every ordered
+source. A recovered task with a missing source must fail safely.
 
 ## Incident response
 
@@ -52,9 +61,12 @@ ordered source or the recovered task must fail safely.
 
 Increasing `MAX_CONCURRENT_JOBS` increases CPU, memory, disk I/O, temporary
 storage, and provider traffic. Benchmark representative copying, video and
-audio transcoding and joining, alternate video codecs, adaptive audio merging,
-trimming, and Identity protection before changing it. WAV output and multiple
-retained join sources can be substantially larger than compressed single-file
-work and must be included in storage-capacity tests.
+audio transcoding, video-to-audio extraction, audio joining, alternate video
+codecs, adaptive audio merging, trimming, and Identity protection before
+changing it. Include both Whisper Tiny and Base with the longest permitted
+clip; inference is CPU- and memory-intensive and occupies a queue slot. WAV
+output, retained extraction sources, and multiple retained
+join sources can be substantially larger than compressed single-file work and
+must be included in storage-capacity tests.
 Per-profile `maxActiveJobs` and `MAX_ACTIVE_JOBS_PER_USER` prevent one actor
 from consuming every queue slot; they do not replace operating-system quotas.

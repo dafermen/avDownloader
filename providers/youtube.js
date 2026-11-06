@@ -137,6 +137,8 @@ export function parseYoutubeInfo(info) {
         label: `${height}p`,
         url: format.url,
         type: 'mp4',
+        formatId: youtubeFormatId(format),
+        ...(separateAudio ? { audioFormatId: youtubeFormatId(separateAudio) } : {}),
         ...(separateAudio ? { audioUrl: separateAudio.url } : {}),
         ...(estimatedSize > 0 ? { estimatedSize } : {})
       };
@@ -150,8 +152,54 @@ export function parseYoutubeInfo(info) {
     thumbnail: typeof info.thumbnail === 'string' ? info.thumbnail : null,
     duration: positiveNumber(info.duration) || null,
     qualities,
+    audioTrack: audio ? {
+      url: audio.url,
+      type: 'mp4',
+      formatId: youtubeFormatId(audio),
+      ...(positiveNumber(audio.filesizeApprox || audio.filesize) > 0
+        ? { estimatedSize: positiveNumber(audio.filesizeApprox || audio.filesize) }
+        : {})
+    } : null,
+    subtitleTracks: parseYoutubeSubtitleTracks(info),
     hlsUrl: null
   };
+}
+
+/**
+ * Keeps the yt-dlp format selector finite and shell-safe. The value is never
+ * accepted from the browser; it is read from yt-dlp and later passed as one
+ * argv item to a shell-free child process.
+ */
+function youtubeFormatId(format) {
+  const id = String(format?.format_id || '').trim();
+  if (!/^[a-z0-9_-]{1,24}$/i.test(id)) {
+    throw new Error('YouTube devolvió un identificador de formato no válido.');
+  }
+  return id;
+}
+
+/**
+ * Converts yt-dlp subtitle dictionaries into metadata-only track choices.
+ * Signed timed-text URLs are intentionally discarded; a later queued job
+ * receives only an opaque selection and asks yt-dlp to resolve the track.
+ */
+export function parseYoutubeSubtitleTracks(info) {
+  const tracks = [];
+  const supportedInputExtensions = new Set(['vtt', 'srt', 'ttml', 'srv1', 'srv2', 'srv3', 'json3']);
+  for (const [automatic, dictionary] of [
+    [false, info?.subtitles],
+    [true, info?.automatic_captions]
+  ]) {
+    if (!dictionary || typeof dictionary !== 'object' || Array.isArray(dictionary)) continue;
+    for (const [language, variants] of Object.entries(dictionary)) {
+      if (tracks.length >= 100 || language === 'live_chat' || !/^[a-z0-9_-]{1,35}$/i.test(language)) continue;
+      if (!Array.isArray(variants) || !variants.some((variant) => supportedInputExtensions.has(String(variant?.ext || '').toLowerCase()))) continue;
+      const rawName = variants.find((variant) => typeof variant?.name === 'string')?.name || language;
+      const name = String(rawName).replace(/[\u0000-\u001f]/g, '').trim().slice(0, 80) || language;
+      tracks.push({ language, name, automatic });
+    }
+  }
+  return tracks;
 }
 
 /** Prioriza M4A y mayor bitrate para la pista de audio separada. */

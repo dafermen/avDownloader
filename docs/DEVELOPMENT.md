@@ -37,9 +37,15 @@ port is not already in use. Use `npm run dev` only during active editing.
 - Local video and audio containers, codecs, codec/container combinations, and
   bitrate values are explicit allowlists in `server.js`; never pass arbitrary
   codecs, extensions, paths, or FFmpeg arguments from the browser.
+- Video-to-audio extraction must keep video extension/MIME validation, require
+  both upload and extraction control headers, reuse the audio output allowlist,
+  and produce an audio job with no video stream.
 - Multi-audio changes must preserve the 64 KiB metadata limit, 20-source limit,
   declared byte accounting, streaming writes, per-source clip validation,
   cleanup, persistence, and restart behavior.
+- Transcription changes must preserve the finite language/model profiles,
+  selected-range duration limit, server-owned model IDs, local-only PCM,
+  worker isolation, model-cache controls, cleanup, persistence, and restart.
 - Trusted proxy headers are accepted only from a loopback peer. Keep proxy
   regression tests when changing authentication or address handling.
 
@@ -68,6 +74,11 @@ persistence, and HTTP range downloads.
 Review the license and runtime purpose, update `THIRD_PARTY_LICENSES.md`, run
 the production dependency audit, and verify Linux installation from a clean
 checkout.
+
+Transformers.js is a runtime dependency. Whisper model artifacts are downloaded
+on first use into `TRANSCRIPTION_CACHE_DIR` and must never be committed. For an
+offline deployment, preload the required allowlisted model as the service user,
+then set `TRANSCRIPTION_ALLOW_MODEL_DOWNLOAD=false`.
 
 ## Definition of done
 

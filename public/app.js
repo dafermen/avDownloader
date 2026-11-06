@@ -5,7 +5,7 @@ import {
   initializeI18n,
   localizeBackendLabel,
   t
-} from '/i18n.js?v=3';
+} from '/i18n.js?v=15';
 
 initializeI18n();
 
@@ -13,9 +13,16 @@ initializeI18n();
 // nodos existen durante toda la vida de la página.
 const form = document.querySelector('#analyze-form');
 const input = document.querySelector('#video-url');
+const batchMode = document.querySelector('#batch-mode');
+const batchUrls = document.querySelector('#video-urls');
 const button = document.querySelector('#submit-button');
 const message = document.querySelector('#form-message');
 const result = document.querySelector('#result');
+const guidedGoalButtons = [...document.querySelectorAll('[data-guided-goal]')];
+const guidedUseLink = document.querySelector('#guided-use-link');
+const guidedUseLocal = document.querySelector('#guided-use-local');
+const guidedHint = document.querySelector('#guided-hint');
+const guidedStepItems = [...document.querySelectorAll('.guided-steps li')];
 const historyElement = document.querySelector('#history');
 const historyList = document.querySelector('#history-list');
 const clearHistoryButton = document.querySelector('#clear-history');
@@ -24,6 +31,8 @@ const panelConfig = document.querySelector('#panel-config');
 const dependencyHealth = document.querySelector('#dependency-health');
 const adminTokenInput = document.querySelector('#admin-token');
 const accessTokenInput = document.querySelector('#access-token');
+const validateAccessTokenButton = document.querySelector('#validate-access-token');
+const accessValidationResult = document.querySelector('#access-validation-result');
 const adminHint = document.querySelector('#admin-hint');
 const panelStatusFilter = document.querySelector('#panel-status-filter');
 const panelProviderFilter = document.querySelector('#panel-provider-filter');
@@ -35,6 +44,14 @@ const adminAudit = document.querySelector('#admin-audit');
 const panelMessage = document.querySelector('#panel-message');
 const panelStats = document.querySelector('#panel-stats');
 const panelJobs = document.querySelector('#panel-jobs');
+const localToolButtons = [...document.querySelectorAll('[data-local-tool]')];
+const localVideoToolCard = document.querySelector('#local-video-tool-card');
+const localAudioToolCard = document.querySelector('#local-audio-tool-card');
+const subtitleToolCard = document.querySelector('#subtitle-tool-card');
+const localToolEyebrow = document.querySelector('#local-tool-eyebrow');
+const localUploadTitle = document.querySelector('#local-upload-title');
+const localToolDescription = document.querySelector('#local-tool-description');
+const localVideoSelectLabel = document.querySelector('#local-video-select-label');
 const localVideoFile = document.querySelector('#local-video-file');
 const localUploadMessage = document.querySelector('#local-upload-message');
 const localEditor = document.querySelector('#local-editor');
@@ -43,10 +60,19 @@ const identityPreview = document.querySelector('#identity-preview');
 const localFileName = document.querySelector('#local-file-name');
 const localFileMeta = document.querySelector('#local-file-meta');
 const localClipMount = document.querySelector('#local-clip-mount');
+const localExportMode = document.querySelector('#local-export-mode');
+const videoOutputSettings = document.querySelector('#video-output-settings');
 const videoOutputFormat = document.querySelector('#video-output-format');
 const videoOutputCodec = document.querySelector('#video-output-codec');
 const videoAudioCodec = document.querySelector('#video-audio-codec');
 const videoOutputHint = document.querySelector('#video-output-hint');
+const videoAudioExtractionSettings = document.querySelector('#video-audio-extraction-settings');
+const videoAudioOutputFormat = document.querySelector('#video-audio-output-format');
+const videoAudioOutputCodec = document.querySelector('#video-audio-output-codec');
+const videoAudioOutputBitrate = document.querySelector('#video-audio-output-bitrate');
+const videoAudioExtractionHint = document.querySelector('#video-audio-extraction-hint');
+const localExportSummary = document.querySelector('#local-export-summary');
+const localExportSummaryText = document.querySelector('#local-export-summary-text');
 const localExportButton = document.querySelector('#local-export-button');
 const localJobsArea = document.querySelector('#local-jobs-area');
 const localAudioFile = document.querySelector('#local-audio-file');
@@ -61,8 +87,47 @@ const audioOutputFormat = document.querySelector('#audio-output-format');
 const audioOutputCodec = document.querySelector('#audio-output-codec');
 const audioOutputBitrate = document.querySelector('#audio-output-bitrate');
 const audioOutputHint = document.querySelector('#audio-output-hint');
+const audioExportSummary = document.querySelector('#audio-export-summary');
+const audioExportSummaryText = document.querySelector('#audio-export-summary-text');
 const audioExportButton = document.querySelector('#audio-export-button');
 const audioJobsArea = document.querySelector('#audio-jobs-area');
+const subtitleSourceYoutube = document.querySelector('#subtitle-source-youtube');
+const subtitleSourceLocal = document.querySelector('#subtitle-source-local');
+const subtitleYoutubePanel = document.querySelector('#subtitle-youtube-panel');
+const subtitleLocalPanel = document.querySelector('#subtitle-local-panel');
+const subtitleUrlForm = document.querySelector('#subtitle-url-form');
+const subtitleUrl = document.querySelector('#subtitle-url');
+const subtitleAnalyzeButton = document.querySelector('#subtitle-analyze-button');
+const subtitleRemoteEditor = document.querySelector('#subtitle-remote-editor');
+const subtitleRemoteTitle = document.querySelector('#subtitle-remote-title');
+const subtitleTrack = document.querySelector('#subtitle-track');
+const subtitleRemoteFormat = document.querySelector('#subtitle-remote-format');
+const subtitleRemoteSummary = document.querySelector('#subtitle-remote-summary');
+const subtitleRemoteSummaryText = document.querySelector('#subtitle-remote-summary-text');
+const subtitleRemoteExport = document.querySelector('#subtitle-remote-export');
+const subtitleVideoFile = document.querySelector('#subtitle-video-file');
+const subtitleLocalPickerLabel = document.querySelector('#subtitle-local-picker-label');
+const subtitleLocalEditor = document.querySelector('#subtitle-local-editor');
+const subtitleVideoPreview = document.querySelector('#subtitle-video-preview');
+const subtitleAudioPreview = document.querySelector('#subtitle-audio-preview');
+const subtitleLocalName = document.querySelector('#subtitle-local-name');
+const subtitleLocalMeta = document.querySelector('#subtitle-local-meta');
+const subtitleClipMount = document.querySelector('#subtitle-clip-mount');
+const subtitleModeExisting = document.querySelector('#subtitle-mode-existing');
+const subtitleModeGenerate = document.querySelector('#subtitle-mode-generate');
+const subtitleLocalTrackField = document.querySelector('#subtitle-local-track-field');
+const subtitleLocalTrack = document.querySelector('#subtitle-local-track');
+const subtitleLocalFormat = document.querySelector('#subtitle-local-format');
+const subtitleTranscriptionSettings = document.querySelector('#subtitle-transcription-settings');
+const subtitleTranscriptionLanguage = document.querySelector('#subtitle-transcription-language');
+const subtitleTranscriptionModel = document.querySelector('#subtitle-transcription-model');
+const subtitleLocalHint = document.querySelector('#subtitle-local-hint');
+const subtitleLocalSummary = document.querySelector('#subtitle-local-summary');
+const subtitleLocalSummaryText = document.querySelector('#subtitle-local-summary-text');
+const subtitleLocalExport = document.querySelector('#subtitle-local-export');
+const subtitleMessage = document.querySelector('#subtitle-message');
+const subtitleJobsArea = document.querySelector('#subtitle-jobs-area');
+const identityCard = document.querySelector('#identity-card');
 const identityEnabled = document.querySelector('#identity-enabled');
 const identityControls = document.querySelector('#identity-controls');
 const identityPadding = document.querySelector('#identity-padding');
@@ -88,6 +153,9 @@ const ACCESS_TOKEN_KEY = 'vdownloader-access-token-v1';
 // panel uses at most 12 requests/minute in one visible tab.
 const JOB_POLL_INTERVAL_MS = 1_500;
 const PANEL_POLL_INTERVAL_MS = 5_000;
+const SUBTITLE_NOTICE_DISMISS_MS = 8_000;
+const SUBTITLE_RESULT_DISMISS_MS = 3_000;
+const UI_DISMISS_ANIMATION_MS = 200;
 const DEFAULT_RATE_LIMIT_RETRY_MS = 60_000;
 const PROVIDER_NAMES = {
   youtube: 'YouTube',
@@ -95,7 +163,9 @@ const PROVIDER_NAMES = {
   pornhub: 'Pornhub',
   xnxx: 'XNXX',
   upload: t('provider.upload'),
-  audio: t('provider.audio')
+  audio: t('provider.audio'),
+  subtitle: t('provider.subtitle'),
+  transcription: t('provider.transcription')
 };
 const AUDIO_OUTPUT_PROFILES = {
   mp3: { codecs: ['mp3'], lossless: false },
@@ -117,14 +187,26 @@ const VIDEO_OUTPUT_PROFILES = {
 };
 const VIDEO_CODEC_LABELS = { h264: 'H.264 / AVC', hevc: 'H.265 / HEVC', vp9: 'VP9' };
 const VIDEO_AUDIO_CODEC_LABELS = { aac: 'AAC-LC', opus: 'Opus' };
+const SUBTITLE_VIDEO_EXTENSIONS = new Set(['.mp4', '.m4v', '.mov', '.webm']);
+const SUBTITLE_AUDIO_EXTENSIONS = new Set(['.mp3', '.m4a', '.aac', '.wav', '.flac', '.ogg', '.opus']);
+const SUBTITLE_VIDEO_ACCEPT = '.mp4,.m4v,.mov,.webm,video/mp4,video/quicktime,video/webm';
+const SUBTITLE_MEDIA_ACCEPT = `${SUBTITLE_VIDEO_ACCEPT},.mp3,.m4a,.aac,.wav,.flac,.ogg,.opus,audio/mpeg,audio/mp4,audio/aac,audio/wav,audio/flac,audio/ogg,audio/opus`;
 let localObjectUrl = null;
 let selectedLocalFile = null;
 let localClipControls = null;
+let selectedLocalTool = 'video';
 let audioObjectUrl = null;
 let selectedAudioFile = null;
 let selectedAudioSources = [];
 let activeAudioSourceIndex = 0;
 let audioClipControls = null;
+let subtitleSourceMode = 'youtube';
+let subtitleLocalMode = 'existing';
+let subtitleRemoteTracks = [];
+let subtitleRemoteVideoTitle = '';
+let selectedSubtitleFile = null;
+let subtitleObjectUrl = null;
+let subtitleClipControls = null;
 let identityDetector = null;
 let identityAnalysis = null;
 let identityPreviewFrame = null;
@@ -134,12 +216,18 @@ let identitySelectedRegion = null;
 let identityPointerOperation = null;
 let identityReviewRunning = false;
 const identityPixelBuffer = document.createElement('canvas');
-let maxUploadBytes = 2 * 1024 ** 3;
+let maxUploadBytes = null;
+let maxTranscriptionMinutes = 180;
+let uploadSettingsPromise = null;
 let latestPanelJobs = [];
 let currentAccessRole = 'admin';
 const selectedPanelJobs = new Set();
 let rejectedAccessToken = '';
+let accessTokenPending = false;
+let apiRetryAt = 0;
 let downloadsPanelRefreshPromise = null;
+let subtitleMessageTimer = null;
+let guidedGoal = 'video';
 
 // El token se conserva solo durante la pestaña actual. No se escribe en el
 // historial persistente del navegador ni se incorpora a URLs.
@@ -149,14 +237,75 @@ adminTokenInput.addEventListener('input', () => {
   try { sessionStorage.setItem(ADMIN_TOKEN_KEY, adminTokenInput.value); } catch {}
 });
 accessTokenInput.addEventListener('input', () => {
-  rejectedAccessToken = '';
-  try { sessionStorage.setItem(ACCESS_TOKEN_KEY, accessTokenInput.value); } catch {}
-  refreshDownloadsPanel();
-  refreshServiceHealth();
+  accessTokenPending = true;
+  adminHint.textContent = t('security.pending');
+  showAccessValidation('pending', t('security.pending'));
 });
+function showAccessValidation(state, message) {
+  accessValidationResult.hidden = false;
+  accessValidationResult.dataset.state = state;
+  accessValidationResult.textContent = message;
+}
+
+validateAccessTokenButton.addEventListener('click', async () => {
+  if (validateAccessTokenButton.disabled) return;
+  const submittedToken = accessTokenInput.value.trim();
+  if (!submittedToken) {
+    showAccessValidation('error', t('security.emptyToken'));
+    return;
+  }
+  if (Date.now() < apiRetryAt) {
+    showAccessValidation('error', accessRetryMessage());
+    return;
+  }
+  accessTokenPending = false;
+  rejectedAccessToken = '';
+  accessTokenInput.value = submittedToken;
+  validateAccessTokenButton.disabled = true;
+  validateAccessTokenButton.textContent = t('security.validating');
+  showAccessValidation('pending', t('security.validating'));
+  try {
+    const result = await refreshServiceHealth();
+    if (accessTokenPending || accessTokenInput.value.trim() !== submittedToken) return;
+    if (result.authenticated) {
+      try { sessionStorage.setItem(ACCESS_TOKEN_KEY, submittedToken); } catch {}
+      showAccessValidation('success', t(result.ok ? 'security.validated' : 'security.validatedDegraded'));
+      refreshDownloadsPanel();
+    } else {
+      try { sessionStorage.removeItem(ACCESS_TOKEN_KEY); } catch {}
+      showAccessValidation('error', result.message);
+    }
+  } finally {
+    validateAccessTokenButton.disabled = false;
+    validateAccessTokenButton.textContent = t('security.validate');
+  }
+});
+
+function accessRetryMessage() {
+  return t('security.rateLimited', { minutes: Math.max(1, Math.ceil((apiRetryAt - Date.now()) / 60_000)) });
+}
+
+function recordApiRetry(response) {
+  if (response.status !== 429) return;
+  const seconds = Number(response.headers.get('retry-after'));
+  apiRetryAt = Math.max(apiRetryAt, Date.now() + (Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds, 900) : 60) * 1000);
+}
+
+function uploadAccessToken() {
+  if (accessTokenInput.value.trim() === rejectedAccessToken && rejectedAccessToken) throw new Error(t('security.invalidToken'));
+  if (accessTokenPending) throw new Error(t('security.pending'));
+  if (Date.now() < apiRetryAt) throw new Error(accessRetryMessage());
+  return accessTokenInput.value.trim();
+}
 
 /** Adds the remote bearer credential without placing it in URLs or persistent storage. */
 async function apiFetch(resource, options = {}) {
+  if (accessTokenPending || Date.now() < apiRetryAt) {
+    return new Response(JSON.stringify({ error: accessTokenPending ? t('security.pending') : accessRetryMessage() }), {
+      status: accessTokenPending ? 401 : 429,
+      headers: { 'content-type': 'application/json', 'retry-after': String(Math.max(1, Math.ceil((apiRetryAt - Date.now()) / 1000))) }
+    });
+  }
   const token = accessTokenInput?.value.trim();
   if (token && token === rejectedAccessToken) {
     return new Response(JSON.stringify({ error: t('security.tokenRejected') }), {
@@ -167,8 +316,63 @@ async function apiFetch(resource, options = {}) {
   const headers = new Headers(options.headers || {});
   if (token) headers.set('authorization', `Bearer ${token}`);
   const response = await fetch(resource, { ...options, headers });
-  if (response.status === 401 && token) rejectedAccessToken = token;
+  recordApiRetry(response);
+  if (response.status === 401 && token && token === accessTokenInput.value.trim() && !accessTokenPending) rejectedAccessToken = token;
   return response;
+}
+
+/**
+ * Obtains a short-lived HttpOnly capability and lets the browser stream the
+ * file directly to disk. This avoids placing the native access token in the
+ * URL and avoids buffering multi-gigabyte outputs in a JavaScript Blob.
+ */
+async function startJobDownload(job, link, errorTarget = panelMessage) {
+  if (!job?.id || !job.downloadUrl || link.dataset.downloadBusy === 'true') return false;
+  const originalText = link.textContent;
+  link.dataset.downloadBusy = 'true';
+  link.classList.add('disabled');
+  link.setAttribute('aria-disabled', 'true');
+  link.textContent = t('download.authorizing');
+  try {
+    const response = await apiFetch(`/api/jobs/${job.id}/download-access`, {
+      method: 'POST',
+      headers: { 'x-vdownloader-download': '1' }
+    });
+    let body = null;
+    try { body = await response.json(); } catch {}
+    if (!response.ok || body?.downloadUrl !== job.downloadUrl) {
+      throw new Error(apiError(body, 'download.authorizationFailed'));
+    }
+    const temporary = document.createElement('a');
+    temporary.href = body.downloadUrl;
+    temporary.download = job.filename;
+    temporary.hidden = true;
+    document.body.append(temporary);
+    temporary.click();
+    temporary.remove();
+    return true;
+  } catch (error) {
+    if (errorTarget) {
+      errorTarget.textContent = error.message || t('download.authorizationFailed');
+      if (errorTarget === panelMessage) errorTarget.className = 'panel-message error';
+    }
+    return false;
+  } finally {
+    delete link.dataset.downloadBusy;
+    link.classList.remove('disabled');
+    link.removeAttribute('aria-disabled');
+    link.textContent = originalText;
+  }
+}
+
+/** Adds the authenticated streaming-download behavior to a visible link. */
+function configureDownloadLink(link, job, errorTarget = panelMessage) {
+  link.href = job.downloadUrl;
+  link.addEventListener('click', async (event) => {
+    event.preventDefault();
+    const started = await startJobDownload(job, link, errorTarget);
+    if (started) link.dispatchEvent(new Event('vdownloader:download-started'));
+  });
 }
 
 /** Returns the bounded wait requested by an HTTP Retry-After header. */
@@ -190,6 +394,57 @@ function waitFor(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+/** Selects the user's intended result before asking for its source. */
+function selectGuidedGoal(goal) {
+  if (!['video', 'audio', 'subtitle', 'identity'].includes(goal)) return;
+  guidedGoal = goal;
+  for (const control of guidedGoalButtons) {
+    const selected = control.dataset.guidedGoal === goal;
+    control.classList.toggle('is-active', selected);
+    control.setAttribute('aria-pressed', String(selected));
+  }
+  setTranslatedText(guidedHint, `guided.hint.${goal}`);
+  guidedUseLink.disabled = goal === 'identity';
+  setGuidedStep(1);
+}
+
+/** Reflects the current quick-start step without controlling the underlying tools. */
+function setGuidedStep(step) {
+  guidedStepItems.forEach((item, index) => {
+    item.classList.toggle('is-current', index === step - 1);
+    item.classList.toggle('is-complete', index < step - 1);
+  });
+}
+
+/** Moves to the correct existing local editor without duplicating its logic. */
+function openGuidedLocalSource() {
+  const targetTool = guidedGoal === 'audio'
+    ? 'extract'
+    : guidedGoal === 'subtitle'
+      ? 'subtitle'
+      : 'video';
+  selectLocalTool(targetTool);
+  if (guidedGoal === 'identity') {
+    localUploadMessage.textContent = t('guided.identityNext');
+    localUploadMessage.className = 'local-upload-message loading';
+  }
+}
+
+for (const control of guidedGoalButtons) {
+  control.addEventListener('click', () => selectGuidedGoal(control.dataset.guidedGoal));
+}
+guidedUseLink.addEventListener('click', () => {
+  form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  input.focus({ preventScroll: true });
+});
+guidedUseLocal.addEventListener('click', openGuidedLocalSource);
+batchMode.addEventListener('change', () => {
+  batchUrls.hidden = !batchMode.checked;
+  input.required = !batchMode.checked;
+  batchUrls.required = batchMode.checked;
+  if (batchMode.checked) batchUrls.focus();
+});
+
 clearHistoryButton.addEventListener('click', () => {
   localStorage.removeItem(HISTORY_KEY);
   renderHistory();
@@ -201,14 +456,39 @@ setInterval(() => {
   if (document.visibilityState !== 'hidden') refreshDownloadsPanel();
 }, PANEL_POLL_INTERVAL_MS);
 setInterval(refreshServiceHealth, 30_000);
-localVideoFile.addEventListener('change', loadSelectedLocalVideo);
+localVideoFile.addEventListener('click', () => { localVideoFile.value = ''; });
+localVideoFile.addEventListener('change', () => loadSelectedLocalVideo());
 localExportButton.addEventListener('click', exportLocalClip);
-videoOutputFormat.addEventListener('change', updateVideoFormatUi);
-videoOutputCodec.addEventListener('change', updateVideoAudioCodecUi);
+localExportMode.addEventListener('change', updateLocalExportModeUi);
+for (const toolButton of localToolButtons) {
+  toolButton.addEventListener('click', () => selectLocalTool(toolButton.dataset.localTool));
+}
+videoOutputFormat.addEventListener('change', () => { updateVideoFormatUi(); updateLocalExportSummary(); });
+videoOutputCodec.addEventListener('change', () => { updateVideoAudioCodecUi(); updateLocalExportSummary(); });
+videoAudioCodec.addEventListener('change', updateLocalExportSummary);
+videoAudioOutputFormat.addEventListener('change', () => { updateVideoAudioExtractionUi(); updateLocalExportSummary(); });
+videoAudioOutputCodec.addEventListener('change', () => { updateVideoAudioExtractionUi(); updateLocalExportSummary(); });
+videoAudioOutputBitrate.addEventListener('change', updateLocalExportSummary);
 localAudioFile.addEventListener('change', loadSelectedLocalAudio);
 audioExportButton.addEventListener('click', exportLocalAudio);
-audioOutputFormat.addEventListener('change', updateAudioFormatUi);
-audioOutputCodec.addEventListener('change', updateAudioFormatUi);
+audioOutputFormat.addEventListener('change', () => { updateAudioFormatUi(); updateAudioExportSummary(); });
+audioOutputCodec.addEventListener('change', () => { updateAudioFormatUi(); updateAudioExportSummary(); });
+audioOutputBitrate.addEventListener('change', updateAudioExportSummary);
+subtitleSourceYoutube.addEventListener('click', () => selectSubtitleSource('youtube'));
+subtitleSourceLocal.addEventListener('click', () => selectSubtitleSource('local'));
+subtitleUrlForm.addEventListener('submit', analyzeSubtitleUrl);
+subtitleTrack.addEventListener('change', updateRemoteSubtitleSummary);
+subtitleRemoteFormat.addEventListener('change', updateRemoteSubtitleSummary);
+subtitleRemoteExport.addEventListener('click', exportRemoteSubtitles);
+subtitleVideoFile.addEventListener('click', () => { subtitleVideoFile.value = ''; });
+subtitleVideoFile.addEventListener('change', loadSelectedSubtitleMedia);
+subtitleModeExisting.addEventListener('click', () => selectLocalSubtitleMode('existing'));
+subtitleModeGenerate.addEventListener('click', () => selectLocalSubtitleMode('generate'));
+subtitleLocalTrack.addEventListener('change', updateLocalSubtitleSummary);
+subtitleLocalFormat.addEventListener('change', updateLocalSubtitleSummary);
+subtitleTranscriptionLanguage.addEventListener('change', updateLocalSubtitleSummary);
+subtitleTranscriptionModel.addEventListener('change', updateLocalSubtitleSummary);
+subtitleLocalExport.addEventListener('click', exportLocalSubtitles);
 identityEnabled.addEventListener('change', toggleIdentityProtection);
 identityAnalyzeButton.addEventListener('click', analyzeIdentityFaces);
 identityClearButton.addEventListener('click', () => clearIdentityAnalysis());
@@ -243,28 +523,52 @@ localVideoPreview.addEventListener('pause', drawIdentityPreview);
 window.addEventListener('beforeunload', () => {
   if (localObjectUrl) URL.revokeObjectURL(localObjectUrl);
   for (const source of selectedAudioSources) URL.revokeObjectURL(source.objectUrl);
+  if (subtitleObjectUrl) URL.revokeObjectURL(subtitleObjectUrl);
 });
 updateVideoFormatUi();
 updateAudioFormatUi();
+updateVideoAudioExtractionUi();
+selectLocalTool('video', { scroll: false });
+selectSubtitleSource('youtube');
+selectLocalSubtitleMode('existing');
 
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
   setLoading(true);
   result.hidden = true;
   result.replaceChildren();
+  const urls = batchMode.checked
+    ? [...new Set(batchUrls.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean))]
+    : [input.value.trim()];
   try {
-    const response = await apiFetch('/api/analyze', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ url: input.value })
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(apiError(data, 'analyze.failed'));
-    renderResult(data);
-    message.textContent = data.qualities.length === 1
-      ? t('analyze.foundOne')
-      : t('analyze.foundMany', { count: data.qualities.length });
-    message.className = 'message loading';
+    if (!urls.length) throw new Error(t('batch.empty'));
+    if (urls.length > 10) throw new Error(t('batch.tooMany'));
+    let completed = 0;
+    const failures = [];
+    for (let index = 0; index < urls.length; index += 1) {
+      message.textContent = urls.length > 1
+        ? t('batch.analyzing', { current: index + 1, total: urls.length })
+        : t('analyze.querying');
+      try {
+        const response = await apiFetch('/api/analyze', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ url: urls[index] })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(apiError(data, 'analyze.failed'));
+        renderResult(data, { initialMode: guidedGoal === 'identity' ? 'video' : guidedGoal });
+        setGuidedStep(4);
+        completed += 1;
+      } catch (error) {
+        failures.push(error.message);
+      }
+    }
+    if (!completed) throw new Error(failures[0] || t('analyze.failed'));
+    message.textContent = urls.length > 1
+      ? t('batch.complete', { completed, failed: failures.length })
+      : t('analyze.foundMany', { count: result.querySelectorAll('.quality-choice').length });
+    message.className = failures.length ? 'message' : 'message loading';
   } catch (error) {
     message.textContent = error.message;
     message.className = 'message';
@@ -287,7 +591,7 @@ function setLoading(loading) {
  * Renderiza el modelo devuelto por /api/analyze.
  * @param {object} video Título, proveedor, duración, miniatura y calidades.
  */
-function renderResult(video) {
+function renderResult(video, { initialMode = 'video' } = {}) {
   const wrapper = document.createElement('div');
   wrapper.className = 'video-info';
   const sortedQualities = [...video.qualities]
@@ -326,18 +630,18 @@ function renderResult(video) {
     details.append(provider, title);
   }
   const links = [];
-  for (const quality of video.qualities) {
+  for (const quality of sortedQualities) {
     const link = document.createElement('button');
     link.type = 'button';
-    link.className = 'download';
-    link.textContent = t('quality.prepare', { quality: quality.label });
+    link.className = 'download quality-choice';
+    link.setAttribute('aria-pressed', 'false');
     link.dataset.selectionId = quality.selectionId;
     link.dataset.quality = quality.label;
     link.dataset.type = quality.type || 'mp4';
     link.dataset.adaptive = quality.adaptive ? 'true' : '';
     link.dataset.estimatedSize = quality.estimatedSize || '';
     const label = document.createElement('span');
-    label.textContent = t('quality.prepare', { quality: quality.label });
+    label.textContent = t('quality.option', { quality: quality.label });
     link.replaceChildren(label);
     if (quality.adaptive || quality.estimatedSize) {
       const estimate = document.createElement('small');
@@ -352,17 +656,266 @@ function renderResult(video) {
   }
   const jobsArea = document.createElement('div');
   jobsArea.className = 'jobs-area';
-  const clip = createClipControls(video.duration, links, video.title, previewQuality ? media : null);
-  for (const link of links) {
-    link.addEventListener('click', () => {
-      if (!link.classList.contains('disabled')) prepareDownload(video, link, jobsArea);
-    });
+
+  const outputHeading = document.createElement('p');
+  outputHeading.className = 'remote-output-heading';
+  outputHeading.textContent = t('remote.chooseResult');
+  const tabs = document.createElement('div');
+  tabs.className = 'remote-output-tabs';
+  tabs.setAttribute('role', 'tablist');
+  tabs.setAttribute('aria-label', t('remote.chooseResult'));
+  const panels = new Map();
+  const tabButtons = new Map();
+  const addMode = (mode, labelKey, panel) => {
+    panel.classList.add('remote-output-panel');
+    panel.dataset.outputMode = mode;
+    panel.hidden = true;
+    panels.set(mode, panel);
+    const tab = document.createElement('button');
+    tab.type = 'button';
+    tab.setAttribute('role', 'tab');
+    tab.setAttribute('aria-selected', 'false');
+    tab.textContent = t(labelKey);
+    tabs.append(tab);
+    tabButtons.set(mode, tab);
+  };
+
+  const videoPanel = document.createElement('section');
+  const presetRow = document.createElement('div');
+  presetRow.className = 'quality-presets';
+  const selectedReview = document.createElement('div');
+  selectedReview.className = 'remote-video-review';
+  const reviewLabel = document.createElement('span');
+  reviewLabel.textContent = t('summary.label');
+  const reviewValue = document.createElement('strong');
+  selectedReview.append(reviewLabel, reviewValue);
+  const startButton = document.createElement('button');
+  startButton.type = 'button';
+  startButton.className = 'download remote-video-start';
+  startButton.textContent = t('remote.createVideo');
+  let selectedQuality = null;
+  const selectQuality = (choice, preset = null) => {
+    selectedQuality = choice;
+    for (const item of links) {
+      const selected = item === choice;
+      item.classList.toggle('is-selected', selected);
+      item.setAttribute('aria-pressed', String(selected));
+    }
+    for (const button of presetRow.querySelectorAll('button')) {
+      button.classList.toggle('is-active', button.dataset.preset === preset);
+    }
+    const notes = [choice.dataset.quality];
+    if (choice.dataset.adaptive) notes.push(t('quality.adaptive'));
+    if (choice.dataset.estimatedSize) notes.push(`~${formatBytes(Number(choice.dataset.estimatedSize))}`);
+    reviewValue.textContent = notes.join(' · ');
+  };
+  const numericHeight = (choice) => Number.parseInt(choice.dataset.quality, 10) || 0;
+  const maximumChoice = links[0] || null;
+  const recommendedChoice = links.find((choice) => numericHeight(choice) <= 720) || maximumChoice;
+  const smallChoice = links.at(-1) || maximumChoice;
+  for (const [preset, labelKey, choice] of [
+    ['recommended', 'preset.recommended', recommendedChoice],
+    ['maximum', 'preset.maximum', maximumChoice],
+    ['small', 'preset.small', smallChoice]
+  ]) {
+    if (!choice) continue;
+    const presetButton = document.createElement('button');
+    presetButton.type = 'button';
+    presetButton.dataset.preset = preset;
+    presetButton.textContent = t(labelKey);
+    presetButton.addEventListener('click', () => selectQuality(choice, preset));
+    presetRow.append(presetButton);
   }
-  details.append(clip.element, list, jobsArea);
+  for (const link of links) link.addEventListener('click', () => selectQuality(link));
+  startButton.addEventListener('click', () => {
+    if (selectedQuality && !selectedQuality.classList.contains('disabled')) {
+      prepareDownload(video, selectedQuality, jobsArea, startButton);
+    }
+  });
+  videoPanel.append(presetRow, list, selectedReview, startButton);
+  addMode('video', 'remote.video', videoPanel);
+
+  const remoteAudio = video.provider === 'youtube' && video.audio
+    ? createRemoteAudioControls(video, jobsArea)
+    : null;
+  if (remoteAudio) addMode('audio', 'remote.audio', remoteAudio.element);
+  const remoteSubtitles = Array.isArray(video.subtitleTracks) && video.subtitleTracks.length
+    ? createRemoteSubtitleControls(video, jobsArea)
+    : null;
+  if (remoteSubtitles) addMode('subtitle', 'remote.subtitles', remoteSubtitles.element);
+
+  const clipLinks = remoteAudio ? [...links, remoteAudio.button] : links;
+  const clip = createClipControls(video.duration, clipLinks, video.title, previewQuality ? media : null);
+  const selectMode = (requestedMode) => {
+    const mode = panels.has(requestedMode) ? requestedMode : 'video';
+    for (const [key, panel] of panels) panel.hidden = key !== mode;
+    for (const [key, tab] of tabButtons) {
+      const active = key === mode;
+      tab.classList.toggle('is-active', active);
+      tab.setAttribute('aria-selected', String(active));
+    }
+    clip.element.hidden = mode === 'subtitle';
+  };
+  for (const [mode, tab] of tabButtons) tab.addEventListener('click', () => selectMode(mode));
+  details.append(outputHeading, tabs, clip.element, ...panels.values(), jobsArea);
   wrapper.append(media, details);
   result.append(wrapper);
   result.hidden = false;
   clip.updateLinks();
+  if (recommendedChoice) selectQuality(recommendedChoice, 'recommended');
+  selectMode(initialMode);
+}
+
+/** Builds the YouTube-only audio export card from the shared audio profiles. */
+function createRemoteAudioControls(video, jobsArea) {
+  const element = document.createElement('section');
+  element.className = 'remote-audio-export';
+  const heading = document.createElement('div');
+  const title = document.createElement('strong');
+  title.textContent = t('youtube.audio.title');
+  const description = document.createElement('p');
+  description.textContent = t('youtube.audio.description');
+  heading.append(title, description);
+
+  const presets = document.createElement('div');
+  presets.className = 'audio-presets';
+  const settings = document.createElement('div');
+  settings.className = 'audio-output-settings remote-audio-settings';
+  const createSelect = (labelKey) => {
+    const label = document.createElement('label');
+    const text = document.createElement('span');
+    text.textContent = t(labelKey);
+    const select = document.createElement('select');
+    label.append(text, select);
+    settings.append(label);
+    return select;
+  };
+  const format = createSelect('audio.format');
+  for (const value of Object.keys(AUDIO_OUTPUT_PROFILES)) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = value.toUpperCase();
+    format.append(option);
+  }
+  format.value = 'mp3';
+  const codec = createSelect('audio.codec');
+  const bitrate = createSelect('audio.bitrate');
+  for (const value of [96, 128, 192, 256, 320]) {
+    const option = document.createElement('option');
+    option.value = String(value);
+    option.textContent = `${value} kbps`;
+    bitrate.append(option);
+  }
+  bitrate.value = '192';
+
+  const hint = document.createElement('p');
+  hint.className = 'audio-output-hint';
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'download remote-audio-button';
+  button.dataset.selectionId = video.audio.selectionId;
+  button.textContent = t('youtube.audio.export');
+  const update = () => updateAudioProfileControls(format, codec, bitrate, hint);
+  const selectPreset = (preset, outputFormat, outputCodec, outputBitrate) => {
+    format.value = outputFormat;
+    update();
+    codec.value = outputCodec;
+    bitrate.value = String(outputBitrate);
+    update();
+    for (const item of presets.querySelectorAll('button')) {
+      item.classList.toggle('is-active', item.dataset.preset === preset);
+    }
+  };
+  for (const [preset, labelKey, outputFormat, outputCodec, outputBitrate] of [
+    ['recommended', 'preset.recommendedAudio', 'mp3', 'mp3', 192],
+    ['maximum', 'preset.maximumAudio', 'flac', 'flac', 320],
+    ['small', 'preset.smallAudio', 'mp3', 'mp3', 96]
+  ]) {
+    const presetButton = document.createElement('button');
+    presetButton.type = 'button';
+    presetButton.dataset.preset = preset;
+    presetButton.textContent = t(labelKey);
+    presetButton.addEventListener('click', () => selectPreset(preset, outputFormat, outputCodec, outputBitrate));
+    presets.append(presetButton);
+  }
+  format.addEventListener('change', update);
+  codec.addEventListener('change', update);
+  button.addEventListener('click', () => {
+    if (!button.classList.contains('disabled')) {
+      prepareRemoteAudio(video, { button, format, codec, bitrate }, jobsArea);
+    }
+  });
+  update();
+  const advanced = document.createElement('details');
+  const advancedSummary = document.createElement('summary');
+  advancedSummary.textContent = t('preset.advanced');
+  advanced.append(advancedSummary, settings, hint);
+  element.append(heading, presets, advanced, button);
+  selectPreset('recommended', 'mp3', 'mp3', 192);
+  return { element, button };
+}
+
+/** Builds a simple YouTube caption export without exposing provider URLs. */
+function createRemoteSubtitleControls(video, jobsArea) {
+  const element = document.createElement('section');
+  element.className = 'remote-subtitle-export';
+  const title = document.createElement('strong');
+  title.textContent = t('remote.subtitleTitle');
+  const description = document.createElement('p');
+  description.textContent = t('remote.subtitleDescription');
+  const settings = document.createElement('div');
+  settings.className = 'audio-output-settings';
+  const trackLabel = document.createElement('label');
+  const trackText = document.createElement('span');
+  trackText.textContent = t('subtitle.track');
+  const track = document.createElement('select');
+  for (const item of video.subtitleTracks) {
+    const option = document.createElement('option');
+    option.value = item.selectionId;
+    option.textContent = `${item.name} (${item.language})${item.automatic ? ` · ${t('subtitle.automatic')}` : ''}`;
+    track.append(option);
+  }
+  trackLabel.append(trackText, track);
+  const formatLabel = document.createElement('label');
+  const formatText = document.createElement('span');
+  formatText.textContent = t('subtitle.outputFormat');
+  const format = document.createElement('select');
+  for (const value of ['srt', 'vtt']) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = value.toUpperCase();
+    format.append(option);
+  }
+  formatLabel.append(formatText, format);
+  settings.append(trackLabel, formatLabel);
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'download';
+  button.textContent = t('subtitle.export');
+  button.addEventListener('click', async () => {
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = t('subtitle.creating');
+    setGuidedStep(5);
+    try {
+      const response = await apiFetch('/api/subtitle-jobs', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-vdownloader-subtitle': '1' },
+        body: JSON.stringify({ selectionId: track.value, outputFormat: format.value })
+      });
+      const job = await response.json();
+      if (!response.ok) throw new Error(apiError(job, 'job.prepareFailed'));
+      refreshDownloadsPanel();
+      await monitorJob(job, jobsArea);
+    } catch (error) {
+      renderJobError(jobsArea, error.message);
+    } finally {
+      button.disabled = false;
+      button.textContent = original;
+    }
+  });
+  element.append(title, description, settings, button);
+  return { element, button };
 }
 
 /** Conecta un elemento video a HLS nativo o a HLS.js mediante proxy local. */
@@ -554,10 +1107,11 @@ function createMarkerButton(text, icon) {
 }
 
 /** Envía una tarea con la calidad y recorte seleccionados y comienza monitoreo. */
-async function prepareDownload(video, qualityButton, jobsArea) {
-  const originalContent = qualityButton.innerHTML;
-  qualityButton.disabled = true;
-  qualityButton.textContent = t('job.creating');
+async function prepareDownload(video, qualityButton, jobsArea, triggerButton = qualityButton) {
+  const originalContent = triggerButton.innerHTML;
+  triggerButton.disabled = true;
+  triggerButton.textContent = t('job.creating');
+  setGuidedStep(5);
   try {
     const payload = {
       selectionId: qualityButton.dataset.selectionId
@@ -578,20 +1132,81 @@ async function prepareDownload(video, qualityButton, jobsArea) {
   } catch (error) {
     renderJobError(jobsArea, error.message);
   } finally {
-    qualityButton.disabled = false;
-    qualityButton.innerHTML = originalContent;
+    triggerButton.disabled = false;
+    triggerButton.innerHTML = originalContent;
   }
 }
 
+/** Creates and monitors an audio-only YouTube export with an allowlisted profile. */
+async function prepareRemoteAudio(video, controls, jobsArea) {
+  const { button, format, codec, bitrate } = controls;
+  const originalContent = button.innerHTML;
+  button.disabled = true;
+  button.textContent = t('job.creating');
+  setGuidedStep(5);
+  try {
+    const payload = {
+      selectionId: button.dataset.selectionId,
+      outputFormat: format.value,
+      audioCodec: codec.value,
+      bitrate: Number(bitrate.value)
+    };
+    if (button.dataset.start && button.dataset.end) {
+      payload.start = Number(button.dataset.start);
+      payload.end = Number(button.dataset.end);
+    }
+    const response = await apiFetch('/api/remote-audio-jobs', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-vdownloader-audio-extract': '1'
+      },
+      body: JSON.stringify(payload)
+    });
+    const job = await response.json();
+    if (!response.ok) throw new Error(apiError(job, 'job.createFailed'));
+    refreshDownloadsPanel();
+    await monitorJob(job, jobsArea);
+  } catch (error) {
+    renderJobError(jobsArea, error.message);
+  } finally {
+    button.disabled = false;
+    button.innerHTML = originalContent;
+  }
+}
+
+/** Load only non-sensitive size settings, independently of the native token. */
+async function refreshUploadSettings() {
+  if (uploadSettingsPromise) return uploadSettingsPromise;
+  uploadSettingsPromise = (async () => {
+    if (Date.now() < apiRetryAt) throw new Error(accessRetryMessage());
+    const response = await fetch('/api/upload-config', {
+      cache: 'no-store', signal: AbortSignal.timeout(10_000)
+    });
+    recordApiRetry(response);
+    if (response.status === 429) throw new Error(accessRetryMessage());
+    if (response.status === 401) throw new Error(t('security.demoExpired'));
+    if (!response.ok) throw new Error(t('local.settingsUnavailable'));
+    const settings = await response.json();
+    if (!Number.isSafeInteger(settings.effectiveMaxBytes) || settings.effectiveMaxBytes <= 0) {
+      throw new Error('Invalid upload settings');
+    }
+    maxUploadBytes = settings.effectiveMaxBytes;
+  })().finally(() => { uploadSettingsPromise = null; });
+  return uploadSettingsPromise;
+}
+
 /** Carga una vista previa local sin enviar todavía el archivo al servidor. */
-async function loadSelectedLocalVideo() {
-  const file = localVideoFile.files?.[0] || null;
+async function loadSelectedLocalVideo(fileOverride = null) {
+  const providedFile = fileOverride instanceof File ? fileOverride : null;
+  const file = providedFile || localVideoFile.files?.[0] || null;
   selectedLocalFile = null;
   localClipControls = null;
   clearIdentityAnalysis(false);
   identityEnabled.checked = false;
   identityControls.hidden = true;
   localEditor.hidden = true;
+  localExportSummary.hidden = true;
   localClipMount.replaceChildren();
   localJobsArea.replaceChildren();
   localUploadMessage.className = 'local-upload-message';
@@ -603,6 +1218,13 @@ async function loadSelectedLocalVideo() {
     localUploadMessage.textContent = '';
     return;
   }
+  try {
+    await refreshUploadSettings();
+  } catch (error) {
+    localUploadMessage.textContent = error.message.startsWith('Upload') || error.name === 'TimeoutError' || error.name === 'TypeError' ? t('local.settingsUnavailable') : error.message;
+    return;
+  }
+  if (!providedFile && localVideoFile.files?.[0] !== file) return;
   if (file.size > maxUploadBytes) {
     localUploadMessage.textContent = t('local.tooLarge', { size: formatBytes(maxUploadBytes) });
     return;
@@ -641,12 +1263,23 @@ async function loadSelectedLocalVideo() {
     });
     localExportButton.dataset.estimatedSize = file.size;
     localExportButton.dataset.duration = duration;
-    localClipControls = createClipControls(duration, [localExportButton], file.name, localVideoPreview);
+    localClipControls = createClipControls(
+      duration,
+      [localExportButton],
+      file.name,
+      localVideoPreview,
+      'video',
+      { onChange: updateLocalExportSummary }
+    );
     localClipMount.replaceChildren(localClipControls.element);
     localClipControls.enable();
     localEditor.hidden = false;
+    updateLocalExportSummary();
     localUploadMessage.textContent = t('local.chooseRange');
     localUploadMessage.className = 'local-upload-message success';
+    if (localExportMode.value === 'audio') {
+      localEditor.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
   } catch (error) {
     localUploadMessage.textContent = error.message;
     localUploadMessage.className = 'local-upload-message';
@@ -682,19 +1315,487 @@ function updateVideoAudioCodecUi() {
   videoOutputHint.textContent = t(videoOutputCodec.value === 'h264' ? 'video.outputHint' : 'video.slowerHint');
 }
 
-/** Updates codec and bitrate controls for the selected audio container. */
-function updateAudioFormatUi() {
-  const profile = AUDIO_OUTPUT_PROFILES[audioOutputFormat.value] || AUDIO_OUTPUT_PROFILES.mp3;
-  const previous = audioOutputCodec.value;
-  audioOutputCodec.replaceChildren(...profile.codecs.map((codec) => {
+/** Updates one audio profile control group from the shared allowlist. */
+function updateAudioProfileControls(formatControl, codecControl, bitrateControl, hintControl) {
+  const profile = AUDIO_OUTPUT_PROFILES[formatControl.value] || AUDIO_OUTPUT_PROFILES.mp3;
+  const previous = codecControl.value;
+  codecControl.replaceChildren(...profile.codecs.map((codec) => {
     const option = document.createElement('option');
     option.value = codec;
     option.textContent = AUDIO_CODEC_LABELS[codec];
     return option;
   }));
-  if (profile.codecs.includes(previous)) audioOutputCodec.value = previous;
-  audioOutputBitrate.disabled = profile.lossless;
-  audioOutputHint.textContent = t(profile.lossless ? 'audio.losslessHint' : 'audio.compressedHint');
+  if (profile.codecs.includes(previous)) codecControl.value = previous;
+  bitrateControl.disabled = profile.lossless;
+  hintControl.textContent = t(profile.lossless ? 'audio.losslessHint' : 'audio.compressedHint');
+}
+
+/** Updates one dynamic label while keeping it compatible with language reloads. */
+function setTranslatedText(element, key) {
+  element.dataset.i18n = key;
+  element.textContent = t(key);
+}
+
+/**
+ * Shows one unambiguous local workflow without discarding the state of the
+ * other editors. The existing export mode remains the internal source of
+ * truth, so this presentation change does not alter either upload endpoint.
+ */
+function selectLocalTool(tool, { scroll = true } = {}) {
+  if (!['video', 'extract', 'audio', 'subtitle'].includes(tool)) return;
+  selectedLocalTool = tool;
+  const audioFilesOnly = tool === 'audio';
+  const subtitlesOnly = tool === 'subtitle';
+  localVideoToolCard.hidden = audioFilesOnly || subtitlesOnly;
+  localAudioToolCard.hidden = !audioFilesOnly;
+  subtitleToolCard.hidden = !subtitlesOnly;
+  for (const button of localToolButtons) {
+    const selected = button.dataset.localTool === tool;
+    button.classList.toggle('is-active', selected);
+    button.setAttribute('aria-pressed', String(selected));
+  }
+
+  if (!audioFilesOnly && !subtitlesOnly) {
+    const extracting = tool === 'extract';
+    localExportMode.value = extracting ? 'audio' : 'video';
+    setTranslatedText(localToolEyebrow, extracting ? 'local.extractEyebrow' : 'local.videoEyebrow');
+    setTranslatedText(localUploadTitle, extracting ? 'local.extractTitle' : 'local.videoTitle');
+    setTranslatedText(localToolDescription, extracting ? 'local.extractDescription' : 'local.videoDescription');
+    setTranslatedText(localVideoSelectLabel, extracting ? 'local.extractSelect' : 'local.videoSelect');
+    updateLocalExportModeUi();
+  }
+
+  if (scroll) {
+    const target = audioFilesOnly
+      ? localAudioToolCard
+      : subtitlesOnly
+        ? subtitleToolCard
+        : localVideoToolCard;
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+/** Returns the currently selected interval represented by an export button. */
+function exportRange(button) {
+  const start = Number(button.dataset.start);
+  const end = Number(button.dataset.end);
+  if (Number.isFinite(start) && Number.isFinite(end) && end > start) return { start, end };
+  const duration = Number(button.dataset.duration);
+  return Number.isFinite(duration) && duration > 0 ? { start: 0, end: duration } : null;
+}
+
+/** Shows the exact video/audio result before the user starts a long job. */
+function updateLocalExportSummary() {
+  const range = exportRange(localExportButton);
+  if (!selectedLocalFile || !range || localExportButton.classList.contains('disabled')) {
+    localExportSummary.hidden = true;
+    return;
+  }
+  const audioOnly = localExportMode.value === 'audio';
+  const format = audioOnly ? videoAudioOutputFormat.value : videoOutputFormat.value;
+  const audioProfile = AUDIO_OUTPUT_PROFILES[videoAudioOutputFormat.value] || AUDIO_OUTPUT_PROFILES.mp3;
+  const profile = audioOnly
+    ? `${AUDIO_CODEC_LABELS[videoAudioOutputCodec.value]}${audioProfile.lossless ? '' : ` · ${videoAudioOutputBitrate.value} kbps`}`
+    : `${VIDEO_CODEC_LABELS[videoOutputCodec.value]} · ${VIDEO_AUDIO_CODEC_LABELS[videoAudioCodec.value]}`;
+  localExportSummaryText.textContent = t('summary.template', {
+    name: selectedLocalFile.name,
+    format: format.toUpperCase(),
+    profile,
+    range: `${formatTime(range.start)}–${formatTime(range.end)}`
+  });
+  localExportSummary.hidden = false;
+}
+
+/** Shows the joined/trimmed audio output before the user starts processing. */
+function updateAudioExportSummary() {
+  if (!selectedAudioSources.length) {
+    audioExportSummary.hidden = true;
+    return;
+  }
+  const profileDefinition = AUDIO_OUTPUT_PROFILES[audioOutputFormat.value] || AUDIO_OUTPUT_PROFILES.mp3;
+  const profile = `${AUDIO_CODEC_LABELS[audioOutputCodec.value]}${profileDefinition.lossless ? '' : ` · ${audioOutputBitrate.value} kbps`}`;
+  const totalDuration = selectedAudioSources.reduce((sum, source) => sum + Math.max(0, source.end - source.start), 0);
+  audioExportSummaryText.textContent = t('summary.template', {
+    name: selectedAudioSources.length === 1
+      ? selectedAudioSources[0].file.name
+      : t('summary.files', { count: selectedAudioSources.length }),
+    format: audioOutputFormat.value.toUpperCase(),
+    profile,
+    range: formatTime(totalDuration)
+  });
+  audioExportSummary.hidden = false;
+}
+
+/**
+ * Updates the shared subtitle notice and optionally removes successful,
+ * non-actionable feedback after a short, accessible reading interval.
+ * Errors and active progress messages remain visible until the next action.
+ */
+function setSubtitleMessage(text, state = '', dismissAfter = 0) {
+  if (subtitleMessageTimer) clearTimeout(subtitleMessageTimer);
+  subtitleMessageTimer = null;
+  subtitleMessage.textContent = text;
+  subtitleMessage.className = `local-upload-message${state ? ` ${state}` : ''}`;
+  if (!text || dismissAfter <= 0) return;
+  subtitleMessageTimer = setTimeout(() => {
+    subtitleMessage.textContent = '';
+    subtitleMessage.className = 'local-upload-message';
+    subtitleMessageTimer = null;
+  }, dismissAfter);
+}
+
+/**
+ * Removes only the finished result shown inside the subtitle tool after the
+ * browser starts its download. The persistent Download Center entry and the
+ * server-side job are intentionally left untouched for later downloads.
+ */
+function dismissInlineSubtitleResult(card) {
+  setTimeout(() => {
+    if (!card.isConnected) return;
+    card.classList.add('is-dismissing');
+    setTimeout(() => card.remove(), UI_DISMISS_ANIMATION_MS);
+  }, SUBTITLE_RESULT_DISMISS_MS);
+}
+
+/** Switches between published YouTube captions and embedded local tracks. */
+function selectSubtitleSource(source) {
+  if (!['youtube', 'local'].includes(source)) return;
+  subtitleSourceMode = source;
+  const local = source === 'local';
+  subtitleYoutubePanel.hidden = local;
+  subtitleLocalPanel.hidden = !local;
+  subtitleSourceYoutube.classList.toggle('is-active', !local);
+  subtitleSourceLocal.classList.toggle('is-active', local);
+  subtitleSourceYoutube.setAttribute('aria-pressed', String(!local));
+  subtitleSourceLocal.setAttribute('aria-pressed', String(local));
+  setSubtitleMessage('');
+}
+
+/** Switches local subtitles between embedded-track extraction and Whisper. */
+function selectLocalSubtitleMode(mode) {
+  if (!['existing', 'generate'].includes(mode)) return;
+  subtitleLocalMode = mode;
+  const generated = mode === 'generate';
+  subtitleModeExisting.classList.toggle('is-active', !generated);
+  subtitleModeGenerate.classList.toggle('is-active', generated);
+  subtitleModeExisting.setAttribute('aria-pressed', String(!generated));
+  subtitleModeGenerate.setAttribute('aria-pressed', String(generated));
+  subtitleLocalTrackField.hidden = generated;
+  subtitleTranscriptionSettings.hidden = !generated;
+  subtitleVideoFile.accept = generated ? SUBTITLE_MEDIA_ACCEPT : SUBTITLE_VIDEO_ACCEPT;
+  setTranslatedText(subtitleLocalPickerLabel, generated ? 'subtitle.selectMedia' : 'subtitle.selectVideo');
+  subtitleLocalHint.textContent = t(generated ? 'subtitle.transcriptionHint' : 'subtitle.localHint');
+  subtitleLocalExport.textContent = t(generated ? 'subtitle.generate' : 'subtitle.export');
+  if (!generated && selectedSubtitleFile && subtitleFileKind(selectedSubtitleFile) === 'audio') {
+    resetLocalSubtitleSelection();
+    setSubtitleMessage(t('subtitle.videoRequired'));
+  }
+  if (selectedSubtitleFile) {
+    setSubtitleMessage(
+      t(generated ? 'subtitle.transcriptionReady' : 'subtitle.localReady'),
+      'success',
+      SUBTITLE_NOTICE_DISMISS_MS
+    );
+  }
+  updateLocalSubtitleSummary();
+}
+
+/** Finds metadata-only YouTube caption tracks through the existing analyzer. */
+async function analyzeSubtitleUrl(event) {
+  event.preventDefault();
+  subtitleAnalyzeButton.disabled = true;
+  subtitleAnalyzeButton.textContent = t('subtitle.searching');
+  subtitleRemoteEditor.hidden = true;
+  subtitleRemoteSummary.hidden = true;
+  subtitleRemoteTracks = [];
+  setSubtitleMessage(t('subtitle.searching'), 'loading');
+  try {
+    const response = await apiFetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ url: subtitleUrl.value })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(apiError(data, 'analyze.failed'));
+    subtitleRemoteTracks = Array.isArray(data.subtitleTracks) ? data.subtitleTracks : [];
+    if (!subtitleRemoteTracks.length) throw new Error(t('subtitle.notFound'));
+    subtitleRemoteVideoTitle = data.title || 'YouTube';
+    subtitleRemoteTitle.textContent = subtitleRemoteVideoTitle;
+    subtitleTrack.replaceChildren(...subtitleRemoteTracks.map((track) => {
+      const option = document.createElement('option');
+      option.value = track.selectionId;
+      option.textContent = `${track.name} (${track.language}) · ${t(track.automatic ? 'subtitle.automatic' : 'subtitle.published')}`;
+      return option;
+    }));
+    subtitleRemoteEditor.hidden = false;
+    setSubtitleMessage(t('subtitle.found', { count: subtitleRemoteTracks.length }), 'success', SUBTITLE_NOTICE_DISMISS_MS);
+    updateRemoteSubtitleSummary();
+  } catch (error) {
+    setSubtitleMessage(error.message);
+  } finally {
+    subtitleAnalyzeButton.disabled = false;
+    subtitleAnalyzeButton.textContent = t('subtitle.analyze');
+  }
+}
+
+/** Summarizes the selected remote caption without exposing its provider URL. */
+function updateRemoteSubtitleSummary() {
+  const track = subtitleRemoteTracks.find((item) => item.selectionId === subtitleTrack.value);
+  if (!track) {
+    subtitleRemoteSummary.hidden = true;
+    return;
+  }
+  subtitleRemoteSummaryText.textContent = t('subtitle.remoteSummary', {
+    title: subtitleRemoteVideoTitle,
+    language: `${track.name} (${track.language})`,
+    kind: t(track.automatic ? 'subtitle.automatic' : 'subtitle.published'),
+    format: subtitleRemoteFormat.value.toUpperCase()
+  });
+  subtitleRemoteSummary.hidden = false;
+}
+
+/** Creates the persisted YouTube subtitle job from an opaque track selection. */
+async function exportRemoteSubtitles() {
+  const track = subtitleRemoteTracks.find((item) => item.selectionId === subtitleTrack.value);
+  if (!track) {
+    setSubtitleMessage(t('subtitle.selectRemoteBeforeExport'));
+    return;
+  }
+  subtitleRemoteExport.disabled = true;
+  subtitleRemoteExport.textContent = t('subtitle.creating');
+  try {
+    const response = await apiFetch('/api/subtitle-jobs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-vdownloader-subtitle': '1' },
+      body: JSON.stringify({ selectionId: track.selectionId, outputFormat: subtitleRemoteFormat.value })
+    });
+    const job = await response.json();
+    if (!response.ok) throw new Error(apiError(job, 'job.prepareFailed'));
+    setSubtitleMessage(t('upload.complete'), 'success', SUBTITLE_NOTICE_DISMISS_MS);
+    refreshDownloadsPanel();
+    await monitorJob(job, subtitleJobsArea);
+  } catch (error) {
+    renderJobError(subtitleJobsArea, error.message);
+    setSubtitleMessage(error.message);
+  } finally {
+    subtitleRemoteExport.disabled = false;
+    subtitleRemoteExport.textContent = t('subtitle.export');
+  }
+}
+
+/** Returns the allowlisted local subtitle source kind without trusting MIME. */
+function subtitleFileKind(file) {
+  const extension = file?.name?.toLowerCase().match(/\.[a-z0-9]+$/)?.[0] || '';
+  if (SUBTITLE_VIDEO_EXTENSIONS.has(extension)) return 'video';
+  if (SUBTITLE_AUDIO_EXTENSIONS.has(extension)) return 'audio';
+  return null;
+}
+
+/** Clears a local subtitle source and every browser-only preview reference. */
+function resetLocalSubtitleSelection({ clearInput = true } = {}) {
+  selectedSubtitleFile = null;
+  subtitleClipControls = null;
+  subtitleLocalEditor.hidden = true;
+  subtitleLocalSummary.hidden = true;
+  subtitleClipMount.replaceChildren();
+  if (clearInput) subtitleVideoFile.value = '';
+  if (subtitleObjectUrl) {
+    URL.revokeObjectURL(subtitleObjectUrl);
+    subtitleObjectUrl = null;
+  }
+  for (const preview of [subtitleVideoPreview, subtitleAudioPreview]) {
+    preview.pause();
+    preview.removeAttribute('src');
+    preview.load();
+  }
+  subtitleVideoPreview.hidden = false;
+  subtitleAudioPreview.hidden = true;
+}
+
+/** Loads a browser-local video or audio preview before any upload occurs. */
+async function loadSelectedSubtitleMedia() {
+  const file = subtitleVideoFile.files?.[0] || null;
+  resetLocalSubtitleSelection({ clearInput: false });
+  subtitleJobsArea.replaceChildren();
+  setSubtitleMessage('');
+  if (!file) {
+    return;
+  }
+  try {
+    await refreshUploadSettings();
+    if (file.size > maxUploadBytes) throw new Error(t('local.tooLarge', { size: formatBytes(maxUploadBytes) }));
+    const sourceKind = subtitleFileKind(file);
+    if (!sourceKind) throw new Error(t('subtitle.unsupportedMedia'));
+    if (sourceKind === 'audio' && subtitleLocalMode !== 'generate') throw new Error(t('subtitle.videoRequired'));
+    setSubtitleMessage(t('local.reading'), 'loading');
+    subtitleObjectUrl = URL.createObjectURL(file);
+    const preview = sourceKind === 'audio' ? subtitleAudioPreview : subtitleVideoPreview;
+    subtitleVideoPreview.hidden = sourceKind === 'audio';
+    subtitleAudioPreview.hidden = sourceKind !== 'audio';
+    await new Promise((resolve, reject) => {
+      const loaded = () => { cleanup(); resolve(); };
+      const failed = () => { cleanup(); reject(new Error(t(sourceKind === 'audio' ? 'audio.previewFailed' : 'local.previewFailed'))); };
+      const cleanup = () => {
+        preview.removeEventListener('loadedmetadata', loaded);
+        preview.removeEventListener('error', failed);
+      };
+      preview.addEventListener('loadedmetadata', loaded);
+      preview.addEventListener('error', failed);
+      preview.src = subtitleObjectUrl;
+      preview.load();
+    });
+    const duration = preview.duration;
+    if (!Number.isFinite(duration) || duration < 1 || duration > 43_200) {
+      throw new Error(t(sourceKind === 'audio' ? 'audio.durationInvalid' : 'local.durationInvalid'));
+    }
+    selectedSubtitleFile = file;
+    subtitleLocalName.textContent = file.name;
+    subtitleLocalMeta.textContent = t('local.meta', { duration: formatTime(duration), size: formatBytes(file.size) });
+    subtitleLocalExport.dataset.duration = duration;
+    subtitleLocalExport.dataset.estimatedSize = file.size;
+    subtitleClipControls = createClipControls(
+      duration,
+      [subtitleLocalExport],
+      file.name,
+      preview,
+      sourceKind,
+      { onChange: updateLocalSubtitleSummary }
+    );
+    subtitleClipMount.replaceChildren(subtitleClipControls.element);
+    subtitleClipControls.enable();
+    subtitleLocalEditor.hidden = false;
+    setSubtitleMessage(
+      t(subtitleLocalMode === 'generate' ? 'subtitle.transcriptionReady' : 'subtitle.localReady'),
+      'success',
+      SUBTITLE_NOTICE_DISMISS_MS
+    );
+    updateLocalSubtitleSummary();
+  } catch (error) {
+    setSubtitleMessage(error.message);
+  }
+}
+
+/** Summarizes local track extraction or speech-to-text generation. */
+function updateLocalSubtitleSummary() {
+  const range = exportRange(subtitleLocalExport);
+  if (!selectedSubtitleFile || !range || subtitleLocalExport.classList.contains('disabled')) {
+    subtitleLocalSummary.hidden = true;
+    return;
+  }
+  const values = {
+    name: selectedSubtitleFile.name,
+    track: Number(subtitleLocalTrack.value) + 1,
+    language: subtitleTranscriptionLanguage.options[subtitleTranscriptionLanguage.selectedIndex]?.textContent || '',
+    model: subtitleTranscriptionModel.options[subtitleTranscriptionModel.selectedIndex]?.textContent || '',
+    format: subtitleLocalFormat.value.toUpperCase(),
+    range: `${formatTime(range.start)}–${formatTime(range.end)}`
+  };
+  subtitleLocalSummaryText.textContent = t(
+    subtitleLocalMode === 'generate' ? 'subtitle.transcriptionSummary' : 'subtitle.localSummary',
+    values
+  );
+  subtitleLocalSummary.hidden = false;
+}
+
+/** Uploads local media once and queues extraction or local transcription. */
+function uploadLocalSubtitle(file, start, end, duration, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const generated = subtitleLocalMode === 'generate';
+    xhr.open('POST', generated ? '/api/transcription-jobs' : '/api/subtitle-upload-jobs');
+    const accessToken = uploadAccessToken();
+    if (accessToken) xhr.setRequestHeader('authorization', `Bearer ${accessToken}`);
+    xhr.setRequestHeader('content-type', file.type || 'application/octet-stream');
+    xhr.setRequestHeader('x-vdownloader-upload', '1');
+    xhr.setRequestHeader('x-vdownloader-subtitle', '1');
+    xhr.setRequestHeader('x-upload-name', encodeURIComponent(file.name));
+    xhr.setRequestHeader('x-upload-duration', String(duration));
+    xhr.setRequestHeader('x-upload-start', String(start));
+    xhr.setRequestHeader('x-upload-end', String(end));
+    xhr.setRequestHeader('x-subtitle-format', subtitleLocalFormat.value);
+    if (generated) {
+      xhr.setRequestHeader('x-vdownloader-transcription', '1');
+      xhr.setRequestHeader('x-transcription-language', subtitleTranscriptionLanguage.value);
+      xhr.setRequestHeader('x-transcription-model', subtitleTranscriptionModel.value);
+    } else {
+      xhr.setRequestHeader('x-subtitle-track', subtitleLocalTrack.value);
+    }
+    xhr.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable) onProgress(Math.round(event.loaded / event.total * 100));
+    });
+    xhr.addEventListener('load', () => {
+      const response = (() => { try { return JSON.parse(xhr.responseText || '{}'); } catch { return {}; } })();
+      if (xhr.status >= 200 && xhr.status < 300) resolve(response);
+      else reject(new Error(apiError(response, generated ? 'subtitle.transcriptionFailed' : 'subtitle.uploadFailed')));
+    });
+    xhr.addEventListener('error', () => reject(new Error(t('upload.network'))));
+    xhr.addEventListener('abort', () => reject(new Error(t('upload.cancelled'))));
+    xhr.send(file);
+  });
+}
+
+/** Validates and starts local subtitle extraction or speech-to-text. */
+async function exportLocalSubtitles() {
+  if (!selectedSubtitleFile) {
+    setSubtitleMessage(t('subtitle.selectBeforeExport'));
+    return;
+  }
+  const range = exportRange(subtitleLocalExport);
+  if (!range || subtitleLocalExport.classList.contains('disabled')) {
+    setSubtitleMessage(t('subtitle.invalidRange'));
+    return;
+  }
+  if (subtitleLocalMode === 'generate' && range.end - range.start > maxTranscriptionMinutes * 60) {
+    setSubtitleMessage(t('subtitle.transcriptionTooLong', { minutes: maxTranscriptionMinutes }));
+    return;
+  }
+  subtitleLocalExport.disabled = true;
+  try {
+    const job = await uploadLocalSubtitle(
+      selectedSubtitleFile,
+      range.start,
+      range.end,
+      Number(subtitleLocalExport.dataset.duration),
+      (progress) => { subtitleLocalExport.textContent = t('upload.progress', { progress }); }
+    );
+    subtitleLocalExport.textContent = t(subtitleLocalMode === 'generate' ? 'subtitle.transcribing' : 'subtitle.processing');
+    setSubtitleMessage(t('upload.complete'), 'success', SUBTITLE_NOTICE_DISMISS_MS);
+    refreshDownloadsPanel();
+    await monitorJob(job, subtitleJobsArea);
+  } catch (error) {
+    renderJobError(subtitleJobsArea, error.message);
+    setSubtitleMessage(error.message);
+  } finally {
+    subtitleLocalExport.disabled = false;
+    subtitleLocalExport.textContent = t(subtitleLocalMode === 'generate' ? 'subtitle.generate' : 'subtitle.export');
+  }
+}
+
+/** Updates codec and bitrate controls for the selected local-audio container. */
+function updateAudioFormatUi() {
+  updateAudioProfileControls(audioOutputFormat, audioOutputCodec, audioOutputBitrate, audioOutputHint);
+}
+
+/** Updates codec and quality controls used to extract audio from local video. */
+function updateVideoAudioExtractionUi() {
+  updateAudioProfileControls(
+    videoAudioOutputFormat,
+    videoAudioOutputCodec,
+    videoAudioOutputBitrate,
+    videoAudioExtractionHint
+  );
+}
+
+/** Switches the local video editor between video output and audio-only output. */
+function updateLocalExportModeUi() {
+  const audioOnly = localExportMode.value === 'audio';
+  videoOutputSettings.hidden = audioOnly;
+  videoOutputHint.hidden = audioOnly;
+  videoAudioExtractionSettings.hidden = !audioOnly;
+  videoAudioExtractionHint.hidden = !audioOnly;
+  identityCard.hidden = audioOnly;
+  toggleIdentityProtection();
+  updateLocalExportSummary();
 }
 
 /** Reads duration using a disposable browser-local audio element. */
@@ -773,17 +1874,23 @@ function showAudioSource(index) {
     'audio',
     {
       initialRange: { start: source.start, end: source.end },
-      onChange: (range) => {
-        if (!range) return;
-        source.start = range.start;
-        source.end = range.end;
+      onChange: (range, enabled) => {
+        const effectiveRange = range || (!enabled ? { start: 0, end: source.duration } : null);
+        if (!effectiveRange) {
+          if (enabled) audioExportSummary.hidden = true;
+          return;
+        }
+        source.start = effectiveRange.start;
+        source.end = effectiveRange.end;
         renderAudioSourceList();
+        updateAudioExportSummary();
       }
     }
   );
   audioClipMount.replaceChildren(audioClipControls.element);
   audioClipControls.enable();
   renderAudioSourceList();
+  updateAudioExportSummary();
 }
 
 function moveAudioSource(index, offset) {
@@ -800,6 +1907,7 @@ function removeAudioSource(index) {
   if (!selectedAudioSources.length) {
     selectedAudioFile = null;
     audioEditor.hidden = true;
+    audioExportSummary.hidden = true;
     audioSourceList.replaceChildren();
     audioUploadMessage.textContent = '';
     return;
@@ -813,6 +1921,7 @@ async function loadSelectedLocalAudio() {
   selectedAudioFile = null;
   audioClipControls = null;
   audioEditor.hidden = true;
+  audioExportSummary.hidden = true;
   audioClipMount.replaceChildren();
   audioSourceList.replaceChildren();
   audioJobsArea.replaceChildren();
@@ -824,6 +1933,28 @@ async function loadSelectedLocalAudio() {
     audioUploadMessage.textContent = '';
     return;
   }
+  const videoFiles = files.filter((file) => ['.mp4', '.m4v', '.mov', '.webm'].includes(
+    file.name.toLowerCase().match(/\.[a-z0-9]+$/)?.[0] || ''
+  ));
+  if (videoFiles.length) {
+    if (files.length !== 1) {
+      audioUploadMessage.textContent = t('audio.mixedVideoSelection');
+      return;
+    }
+    selectLocalTool('extract', { scroll: false });
+    localAudioFile.value = '';
+    await loadSelectedLocalVideo(videoFiles[0]);
+    audioUploadMessage.textContent = t('audio.videoRedirect');
+    audioUploadMessage.className = 'local-upload-message success';
+    return;
+  }
+  try {
+    await refreshUploadSettings();
+  } catch (error) {
+    audioUploadMessage.textContent = error.message.startsWith('Upload') || error.name === 'TimeoutError' || error.name === 'TypeError' ? t('local.settingsUnavailable') : error.message;
+    return;
+  }
+  if (files.some((file, index) => localAudioFile.files?.[index] !== file)) return;
   if (files.length > 20 || files.reduce((sum, file) => sum + file.size, 0) > maxUploadBytes) {
     audioUploadMessage.textContent = files.length > 20
       ? t('audio.tooMany')
@@ -864,7 +1995,7 @@ function uploadLocalAudio(file, start, end, duration, outputFormat, audioCodec, 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/audio-jobs');
-    const accessToken = accessTokenInput.value.trim();
+    const accessToken = uploadAccessToken();
     if (accessToken) xhr.setRequestHeader('authorization', `Bearer ${accessToken}`);
     xhr.setRequestHeader('content-type', file.type || 'application/octet-stream');
     xhr.setRequestHeader('x-vdownloader-audio', '1');
@@ -914,7 +2045,7 @@ function uploadJoinedAudio(sources, outputFormat, audioCodec, bitrate, onProgres
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/audio-join-jobs');
-    const accessToken = accessTokenInput.value.trim();
+    const accessToken = uploadAccessToken();
     if (accessToken) xhr.setRequestHeader('authorization', `Bearer ${accessToken}`);
     xhr.setRequestHeader('x-vdownloader-audio-join', '1');
     xhr.upload.addEventListener('progress', (event) => {
@@ -933,7 +2064,16 @@ function uploadJoinedAudio(sources, outputFormat, audioCodec, bitrate, onProgres
 
 /** Creates and monitors a local audio trim/transcode job. */
 async function exportLocalAudio() {
-  if (!selectedAudioSources.length || audioExportButton.classList.contains('disabled')) return;
+  if (!selectedAudioSources.length) {
+    audioUploadMessage.textContent = t('audio.selectBeforeExport');
+    audioUploadMessage.className = 'local-upload-message';
+    return;
+  }
+  if (audioExportButton.classList.contains('disabled')) {
+    audioUploadMessage.textContent = t('local.invalidExportRange');
+    audioUploadMessage.className = 'local-upload-message';
+    return;
+  }
   const rangesValid = selectedAudioSources.every((source) => Number.isFinite(source.start)
     && Number.isFinite(source.end) && source.end > source.start);
   if (!rangesValid) {
@@ -983,19 +2123,20 @@ async function exportLocalAudio() {
  * La vista previa se dibuja en un canvas transparente sobre el reproductor.
  */
 function toggleIdentityProtection() {
-  identityControls.hidden = !identityEnabled.checked;
-  localExportButton.textContent = identityEnabled.checked
-    ? t('identity.exportProtected')
-    : t('local.exportClip');
-  if (identityEnabled.checked) drawIdentityPreview();
+  const audioOnly = localExportMode.value === 'audio';
+  identityControls.hidden = audioOnly || !identityEnabled.checked;
+  localExportButton.textContent = audioOnly
+    ? t('video.extractButton')
+    : identityEnabled.checked
+      ? t('identity.exportProtected')
+      : t('local.createVideo');
+  if (!audioOnly && identityEnabled.checked) drawIdentityPreview();
   else clearIdentityPreview();
 }
 
 /** Devuelve el intervalo actual expuesto por los controles de recorte. */
 function getLocalClipRange() {
-  const start = Number(localExportButton.dataset.start);
-  const end = Number(localExportButton.dataset.end);
-  return Number.isFinite(start) && Number.isFinite(end) && end > start ? { start, end } : null;
+  return exportRange(localExportButton);
 }
 
 /** Inicializa una única instancia local del detector facial. */
@@ -1645,7 +2786,7 @@ function uploadLocalFile(file, start, end, duration, identityTrackId, outputProf
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/upload-jobs');
-    const accessToken = accessTokenInput.value.trim();
+    const accessToken = uploadAccessToken();
     if (accessToken) xhr.setRequestHeader('authorization', `Bearer ${accessToken}`);
     xhr.setRequestHeader('content-type', file.type || 'application/octet-stream');
     xhr.setRequestHeader('x-vdownloader-upload', '1');
@@ -1671,34 +2812,82 @@ function uploadLocalFile(file, start, end, duration, identityTrackId, outputProf
   });
 }
 
+/** Uploads a local video whose selected range will be exported as audio only. */
+function uploadExtractedVideoAudio(file, start, end, duration, outputProfile, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/video-audio-jobs');
+    const accessToken = uploadAccessToken();
+    if (accessToken) xhr.setRequestHeader('authorization', `Bearer ${accessToken}`);
+    xhr.setRequestHeader('content-type', file.type || 'application/octet-stream');
+    xhr.setRequestHeader('x-vdownloader-upload', '1');
+    xhr.setRequestHeader('x-vdownloader-audio-extract', '1');
+    xhr.setRequestHeader('x-upload-name', encodeURIComponent(file.name));
+    xhr.setRequestHeader('x-upload-duration', String(duration));
+    xhr.setRequestHeader('x-upload-start', String(start));
+    xhr.setRequestHeader('x-upload-end', String(end));
+    xhr.setRequestHeader('x-audio-format', outputProfile.format);
+    xhr.setRequestHeader('x-audio-codec', outputProfile.audioCodec);
+    if (!AUDIO_OUTPUT_PROFILES[outputProfile.format].lossless) {
+      xhr.setRequestHeader('x-audio-bitrate', String(outputProfile.bitrate));
+    }
+    xhr.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable) onProgress(Math.round(event.loaded / event.total * 100));
+    });
+    xhr.addEventListener('load', () => {
+      const response = (() => { try { return JSON.parse(xhr.responseText || '{}'); } catch { return {}; } })();
+      if (xhr.status >= 200 && xhr.status < 300) resolve(response);
+      else reject(new Error(apiError(response, 'video.extractUploadFailed')));
+    });
+    xhr.addEventListener('error', () => reject(new Error(t('upload.network'))));
+    xhr.addEventListener('abort', () => reject(new Error(t('upload.cancelled'))));
+    xhr.send(file);
+  });
+}
+
 /** Crea la tarea local después de validar el intervalo elegido. */
 async function exportLocalClip() {
-  if (!selectedLocalFile || localExportButton.classList.contains('disabled')) return;
-  const start = Number(localExportButton.dataset.start);
-  const end = Number(localExportButton.dataset.end);
+  if (!selectedLocalFile) {
+    localUploadMessage.textContent = t('local.selectBeforeExport');
+    localUploadMessage.className = 'local-upload-message';
+    return;
+  }
+  if (localExportButton.classList.contains('disabled')) {
+    localUploadMessage.textContent = t('local.invalidExportRange');
+    localUploadMessage.className = 'local-upload-message';
+    return;
+  }
+  const range = exportRange(localExportButton);
   const duration = Number(localExportButton.dataset.duration);
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+  if (!range) {
     localUploadMessage.textContent = t('local.invalidExportRange');
     return;
   }
-  const originalContent = localExportButton.innerHTML;
+  const { start, end } = range;
+  const audioOnly = localExportMode.value === 'audio';
   localExportButton.disabled = true;
   try {
-    const range = { start, end };
     let identityTrackId = null;
-    if (identityEnabled.checked) {
+    if (!audioOnly && identityEnabled.checked) {
       localExportButton.textContent = t('identity.preparing');
       identityTrackId = await registerIdentityTrack(range);
     }
-    const job = await uploadLocalFile(selectedLocalFile, start, end, duration, identityTrackId, {
-      format: videoOutputFormat.value,
-      videoCodec: videoOutputCodec.value,
-      audioCodec: videoAudioCodec.value
-    }, (progress) => {
-      localExportButton.textContent = t('upload.progress', { progress });
-    });
-    localExportButton.textContent = t('job.processing');
-    localUploadMessage.textContent = t('upload.complete');
+    const progress = (value) => {
+      localExportButton.textContent = t('upload.progress', { progress: value });
+    };
+    const job = audioOnly
+      ? await uploadExtractedVideoAudio(selectedLocalFile, start, end, duration, {
+        format: videoAudioOutputFormat.value,
+        audioCodec: videoAudioOutputCodec.value,
+        bitrate: Number(videoAudioOutputBitrate.value)
+      }, progress)
+      : await uploadLocalFile(selectedLocalFile, start, end, duration, identityTrackId, {
+        format: videoOutputFormat.value,
+        videoCodec: videoOutputCodec.value,
+        audioCodec: videoAudioCodec.value
+      }, progress);
+    localExportButton.textContent = t(audioOnly ? 'video.extracting' : 'job.processing');
+    localUploadMessage.textContent = t(audioOnly ? 'video.extractUploadComplete' : 'upload.complete');
     localUploadMessage.className = 'local-upload-message success';
     refreshDownloadsPanel();
     await monitorJob(job, localJobsArea);
@@ -1708,7 +2897,7 @@ async function exportLocalClip() {
     localUploadMessage.className = 'local-upload-message';
   } finally {
     localExportButton.disabled = false;
-    localExportButton.innerHTML = originalContent;
+    updateLocalExportModeUi();
   }
 }
 
@@ -1730,9 +2919,18 @@ async function monitorJob(initialJob, jobsArea) {
   progress.className = 'job-progress';
   const bar = document.createElement('i');
   progress.append(bar);
+  const stageRail = document.createElement('div');
+  stageRail.className = 'job-stage-rail';
+  const stageOrder = ['queued', 'downloading', 'processing', 'finalizing'];
+  const stageNodes = stageOrder.map((stage) => {
+    const node = document.createElement('span');
+    node.textContent = t(`job.stage.${stage}`);
+    stageRail.append(node);
+    return node;
+  });
   const detail = document.createElement('p');
   top.append(status, actions);
-  card.append(top, progress, detail);
+  card.append(top, stageRail, progress, detail);
   jobsArea.replaceChildren(card);
 
   let job = initialJob;
@@ -1743,32 +2941,81 @@ async function monitorJob(initialJob, jobsArea) {
   });
   while (true) {
     const value = Math.max(0, Math.min(100, job.progress || 0));
+    const currentStage = job.status === 'queued'
+      ? 'queued'
+      : (stageOrder.includes(job.stage) ? job.stage : 'processing');
+    const currentStageIndex = job.status === 'ready' ? stageOrder.length : stageOrder.indexOf(currentStage);
+    stageNodes.forEach((node, index) => {
+      node.classList.toggle('is-done', index < currentStageIndex);
+      node.classList.toggle('is-current', index === currentStageIndex);
+    });
     status.textContent = job.status === 'queued'
       ? t('job.queuedProgress')
       : (job.status === 'retrying'
-          ? (['upload', 'audio'].includes(job.provider) ? t('job.checkingSource') : t('job.refreshingLink'))
-          : t(job.mediaKind === 'audio' ? 'audio.processing' : 'job.preparingMp4'));
+          ? (['upload', 'audio', 'subtitle'].includes(job.provider) ? t('job.checkingSource') : t('job.refreshingLink'))
+          : t(job.mediaKind === 'subtitle'
+            ? 'subtitle.processing'
+            : job.mediaKind === 'audio'
+              ? 'audio.processing'
+              : 'job.preparingMp4'));
     percent.textContent = `${value}%`;
     bar.style.width = `${value}%`;
     detail.textContent = job.status === 'queued'
       ? t('job.waitingSlot')
       : (job.status === 'retrying'
-          ? (['upload', 'audio'].includes(job.provider)
+          ? (['upload', 'audio', 'subtitle'].includes(job.provider)
               ? t('job.preparingSource')
               : t('job.retry', { attempt: job.attempts, total: job.maxRetries + 1 }))
-          : formatJobEta(job));
+          : (['downloading', 'processing', 'finalizing'].includes(currentStage)
+              ? t(`job.stage.${currentStage}Detail`)
+              : formatJobEta(job)));
 
     if (job.status === 'ready') {
       status.textContent = t('job.ready');
       percent.textContent = formatBytes(job.size);
-      detail.textContent = t(job.mediaKind === 'audio' ? 'audio.readyDescription' : 'job.readyDescription');
+      detail.textContent = t(job.mediaKind === 'subtitle'
+        ? 'subtitle.readyDescription'
+        : job.mediaKind === 'audio'
+          ? 'audio.readyDescription'
+          : 'job.readyDescription');
       cancel.remove();
+      stageNodes.forEach((node) => {
+        node.classList.add('is-done');
+        node.classList.remove('is-current');
+      });
+      const readyActions = document.createElement('div');
+      readyActions.className = 'ready-actions';
       const download = document.createElement('a');
       download.className = 'download-ready';
-      download.href = job.downloadUrl;
       download.textContent = t('actions.downloadFile');
-      card.append(download);
+      configureDownloadLink(download, job, detail);
+      if (jobsArea === subtitleJobsArea) {
+        download.addEventListener('vdownloader:download-started', () => dismissInlineSubtitleResult(card), { once: true });
+      }
+      const another = document.createElement('button');
+      another.type = 'button';
+      another.className = 'secondary-action';
+      another.textContent = t('actions.createAnother');
+      another.addEventListener('click', () => {
+        const creationArea = jobsArea.closest('.video-info, .local-tool-card');
+        creationArea?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        creationArea?.querySelector('button:not([disabled]), select:not([disabled])')?.focus({ preventScroll: true });
+      });
+      const viewDownloads = document.createElement('button');
+      viewDownloads.type = 'button';
+      viewDownloads.className = 'secondary-action';
+      viewDownloads.textContent = t('actions.viewDownloads');
+      viewDownloads.addEventListener('click', () => {
+        downloadsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        downloadsPanel.focus?.({ preventScroll: true });
+      });
+      readyActions.append(download, another, viewDownloads);
+      card.append(readyActions);
       saveHistory(job);
+      requestAnimationFrame(() => {
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        download.focus({ preventScroll: true });
+      });
       return;
     }
     if (job.status === 'cancelled') {
@@ -1855,8 +3102,8 @@ async function renderHistory() {
     const meta = document.createElement('span');
     meta.textContent = `${formatBytes(entry.size)} · ${formatRelativeTime(entry.createdAt)}`;
     const link = document.createElement('a');
-    link.href = entry.downloadUrl;
     link.textContent = t('actions.download');
+    configureDownloadLink(link, entry);
     info.append(name, meta);
     item.append(info, link);
     historyList.append(item);
@@ -1904,18 +3151,40 @@ async function refreshDownloadsPanelOnce() {
 /** Consulta el diagnóstico operativo sin bloquear el panel de tareas. */
 async function refreshServiceHealth() {
   try {
-    const response = await apiFetch('/api/health', { cache: 'no-store' });
+    const response = await apiFetch('/api/health', { cache: 'no-store', signal: AbortSignal.timeout(10_000) });
     const health = await response.json();
+    if (![200, 503].includes(response.status) || !health.dependencies) {
+      currentAccessRole = 'none';
+      for (const control of [adminRestartSelected, adminCleanExpired, adminRefreshAudit, adminTokenInput]) control.disabled = true;
+      dependencyHealth.textContent = t('health.unverified');
+      adminHint.textContent = accessTokenPending ? t('security.pending')
+        : response.status === 429 ? accessRetryMessage()
+        : response.status === 401 || response.status === 403 ? t('security.nativeAccessRequired')
+        : t('local.settingsUnavailable');
+      const message = response.status === 429 ? accessRetryMessage()
+        : health.error === 'demo_access_required' ? t('security.demoExpired')
+        : response.status === 401 || response.status === 403 ? t('security.invalidToken')
+        : t('security.validationFailed');
+      return { authenticated: false, message };
+    }
     renderServiceHealth(health);
+    return { authenticated: true, ok: response.ok };
   } catch {
-    renderServiceHealth({ status: 'offline', dependencies: {} });
+    dependencyHealth.textContent = t('health.unverified');
+    adminHint.textContent = t('local.settingsUnavailable');
+    return { authenticated: false, message: t('security.validationFailed') };
   }
 }
 
 /** Muestra versiones y disponibilidad de herramientas y editores locales. */
 function renderServiceHealth(health) {
   const dependencies = health.dependencies || {};
-  if (Number(health.uploads?.maxBytes) > 0) maxUploadBytes = Number(health.uploads.maxBytes);
+  const effectiveUploadBytes = Number(health.uploads?.effectiveMaxBytes ?? health.uploads?.maxBytes);
+  if (effectiveUploadBytes > 0) maxUploadBytes = effectiveUploadBytes;
+  const reportedTranscriptionMinutes = Number(health.subtitleTools?.automaticTranscription?.maxMinutes);
+  if (Number.isFinite(reportedTranscriptionMinutes) && reportedTranscriptionMinutes > 0) {
+    maxTranscriptionMinutes = reportedTranscriptionMinutes;
+  }
   const tokenRequired = Boolean(health.administration?.tokenRequired);
   currentAccessRole = health.administration?.role || 'none';
   const canAdminister = currentAccessRole === 'admin';
@@ -1931,7 +3200,7 @@ function renderServiceHealth(health) {
     ['FFmpeg', dependencies.ffmpeg?.available, dependencies.ffmpeg?.version || t('health.unavailable')],
     ['yt-dlp', dependencies.ytDlp?.available, dependencies.ytDlp?.version || t('health.unavailable')],
     [t('health.localUpload'), health.uploads?.enabled, health.uploads?.enabled
-      ? t('health.maximum', { size: formatBytes(maxUploadBytes) })
+      ? t(health.uploads?.limitEnabled === false ? 'health.noUploadLimit' : 'health.maximum', { size: formatBytes(maxUploadBytes) })
       : t('health.unavailable')],
     [t('health.protection'), health.identityProtection?.enabled, health.identityProtection?.enabled
       ? t('health.localPixelation')
@@ -2159,28 +3428,8 @@ function renderPanelJobs(jobs) {
     }
     if (job.status === 'ready') {
       const download = document.createElement('a');
-      download.href = job.downloadUrl;
       download.textContent = t('actions.download');
-      download.addEventListener('click', async (event) => {
-        if (!accessTokenInput.value.trim()) return;
-        event.preventDefault();
-        download.classList.add('disabled');
-        try {
-          const response = await apiFetch(job.downloadUrl);
-          if (!response.ok) throw new Error(t('job.queryFailed'));
-          const objectUrl = URL.createObjectURL(await response.blob());
-          const temporary = document.createElement('a');
-          temporary.href = objectUrl;
-          temporary.download = job.filename;
-          temporary.click();
-          setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
-        } catch (error) {
-          panelMessage.textContent = error.message;
-          panelMessage.className = 'panel-message error';
-        } finally {
-          download.classList.remove('disabled');
-        }
-      });
+      configureDownloadLink(download, job);
       actions.append(download);
     }
     if (job.status !== 'restarting') {
