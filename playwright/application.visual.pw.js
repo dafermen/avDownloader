@@ -44,17 +44,26 @@ async function expectNoSeriousAccessibilityViolations(page) {
   expect(important, JSON.stringify(important, null, 2)).toEqual([]);
 }
 
+async function alignViewportTo(page, selector) {
+  await page.locator(selector).evaluate((element) => {
+    const top = element.getBoundingClientRect().top + window.scrollY;
+    window.scrollTo({ top: Math.max(0, top - 16), behavior: 'instant' });
+  });
+}
+
 test('desktop Spanish covers video, audio, subtitle flows and accessibility', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1100 });
   await preparePage(page, 'es');
-  await expect(page).toHaveScreenshot('desktop-home-es.png', { fullPage: true });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect(page).toHaveScreenshot('desktop-home-es.png');
 
   await page.locator('#video-url').fill('https://www.youtube.com/watch?v=visualtest01');
   await page.locator('#analyze-form button[type="submit"]').click();
   await expect(page.locator('#result')).toBeVisible();
   await expect(page.locator('.remote-output-tabs')).toContainText('Solo audio');
   await expect(page.locator('.creation-estimate').first()).toBeVisible();
-  await expect(page).toHaveScreenshot('desktop-video-result-es.png', { fullPage: true });
+  await alignViewportTo(page, '#result');
+  await expect(page).toHaveScreenshot('desktop-video-result-es.png');
 
   await page.locator('.remote-output-tabs button').nth(1).click();
   await expect(page.locator('.remote-audio-export')).toBeVisible();
@@ -68,12 +77,14 @@ test('mobile English exposes audio and editable subtitle tools', async ({ page }
   await preparePage(page, 'en');
   await page.locator('#local-tool-audio').click();
   await expect(page.locator('#local-audio-tool-card')).toBeVisible();
-  await expect(page).toHaveScreenshot('mobile-audio-en.png', { fullPage: true });
+  await alignViewportTo(page, '#local-audio-tool-card');
+  await expect(page).toHaveScreenshot('mobile-audio-en.png');
 
   await page.locator('#local-tool-subtitle').click();
   await page.locator('#subtitle-source-local').click();
   await page.locator('#subtitle-mode-compose').click();
   await expect(page.locator('#subtitle-mode-compose')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page).toHaveScreenshot('mobile-subtitle-en.png', { fullPage: true });
+  await alignViewportTo(page, '#subtitle-tool-card');
+  await expect(page).toHaveScreenshot('mobile-subtitle-en.png');
   await expectNoSeriousAccessibilityViolations(page);
 });

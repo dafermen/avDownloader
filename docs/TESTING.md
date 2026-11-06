@@ -69,7 +69,9 @@ test files.
 
 `npm run test:visual` compares Chromium captures under
 `test/visual/__snapshots__/` and checks the primary video, audio, and subtitle
-entry points in Spanish and English at desktop and mobile sizes. Use
+entry points in Spanish and English at desktop and mobile sizes. Captures use
+fixed viewports aligned to the relevant panel so minor cross-platform font
+metric differences cannot change the image dimensions. Use
 `npm run test:visual:update` only after intentionally reviewing a visual
 change; never update baselines merely to hide an unexplained difference.
 
